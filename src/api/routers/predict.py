@@ -1,9 +1,12 @@
 from fastapi import APIRouter, UploadFile
 from PIL import Image
-import torch
 
-from src.core.inference import get_eval_transform, get_inference_model, get_label_encoder
-from src.utils.label_encoder import decode_prediction
+from src.core.inference import (
+    get_eval_transform,
+    get_inference_model,
+    get_label_encoder,
+    predict_with_confidence,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger("predict")
@@ -25,14 +28,17 @@ async def predict(file: UploadFile):
 
         logger.info("Imagen procesada correctamente")
 
-        with torch.no_grad():
-            pred = model(image).argmax().item()
+        pred_idx, label, confidence, probabilities = predict_with_confidence(
+            model, image, label_encoder
+        )
 
-        logger.info(f"Predicción realizada: {pred}")
+        logger.info(f"Prediccion realizada: {pred_idx} ({label}, conf={confidence:.3f})")
 
         return {
-            "prediction": pred,
-            "label": decode_prediction(label_encoder, pred),
+            "prediction": pred_idx,
+            "label": label,
+            "confidence": round(confidence, 4),
+            "probabilities": {k: round(v, 4) for k, v in probabilities.items()},
         }
 
     except Exception as e:

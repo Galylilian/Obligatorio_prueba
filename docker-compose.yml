@@ -1,23 +1,44 @@
-version: "3.9"
-
 services:
-  fastapi:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-
-    container_name: bed-detector-api
-
+    container_name: fall-detector-api
     ports:
-      - "8080:8080"
-
+      - "${API_PORT:-8080}:8080"
     volumes:
-      - ./src:/app/src          # hot reload código
-      - ./models:/app/models    # acceso al modelo
-    #- ./data:/app/data        # (opcional) datos
-
+      - ./models:/app/models:ro
     environment:
-      - PYTHONUNBUFFERED=1
-      - MODEL_PATH=/app/models/resnet18.pth
-
+      APP_ENV: production
+      MODEL_PATH: /app/models/resnet18_best.pth
+      LABEL_ENCODER_PATH: /app/models/label_encoder.pkl
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  streamlit:
+    profiles: ["dev", "full"]
+    image: python:3.11-slim
+    container_name: fall-detector-ui
+    working_dir: /app
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      APP_ENV: development
+      API_URL: http://api:8080
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements-dev.txt &&
+             streamlit run app/streamlit_app.py
+             --server.address 0.0.0.0
+             --server.port 8501"
+    depends_on:
+      api:
+        condition: service_healthy
