@@ -11,6 +11,7 @@ obligatorio/
 │
 ├── models/                       # Modelos entrenados
 │   ├── resnet18.pth
+    ├──resnet18_quantized.pth     # cunando queremos usarlo?
 │
 ├── notebooks/                    # EDA y experimentación
 │   └── eda.ipynb                 # falta hacerlo
@@ -21,7 +22,7 @@ obligatorio/
 │
 ├── src/                          # Código fuente principal
 │
-│   ├── api/                      # API (FastAPI)
+│   ├── api/                      # API (FastAPI) Se utilizó FastAPI, que permite generar documentación automática de la API mediante Swagger, facilitando la exploración y prueba de los endpoints.
 │   │   ├── routers/
 │   │   │   ├── predict.py        # endpoint CNN
 │   │   │   └── predict_yolo.py   # endpoint YOLO
@@ -30,7 +31,7 @@ obligatorio/
 │   ├── core/                     # Lógica ML
 │   │   ├── model.py              # ResNet18
 │   │   ├── train.py              # revisar mejorar,cambiar la cantidad de epochs
-│   │   ├── evaluate.py
+│   │   ├── evaluate.py           # Las métricas del modelo se calculan offline utilizando un conjunto de test, ya  que en producción no se dispone de etiquetas reales para comparar las predicciones
 │   │   ├── yolo_model.py         # baseline YOLO
 │   │   ├── gradcam.py            # explicabilidad
 │   │
@@ -42,13 +43,13 @@ obligatorio/
 │
 │   ├── utils/                    # Utilidades
 │   │   ├── metrics.py
-│   │   └── logger.py
+│   │   └── logger.py             # registro de eventos,te permite debuggear mejor
 │
 │   ├── settings/                 # Configuración
 │   │   └── config.py             # aca esta el modelo a utilizar y OS
 │
 ├── app/                          # UI (Streamlit)
-│   └── streamlit_app.py          # este es el frontend
+│   └── streamlit_app.py          # este es el frontend (permite subir mas de una imagen)
 │
 ├── tests/                        # Tests
 │   └── test_api.py               # esto hay que adecuarlo
@@ -81,11 +82,16 @@ pip install -r requirements.txt
 python src/core/train.py
 uvicorn src.api.app:app --reload
 
+# tengo otro venv
+deactivate
+Rename-Item venv venv_old
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 
 
 # Pasos
 
-#offline 
+# offline 
 1. pip install -r requirements.txt
 2. python scripts/download_dataset.py
 3. python scripts/convert_dataset.py
@@ -93,19 +99,20 @@ uvicorn src.api.app:app --reload
 
 download → convert → train → evaluate
 
-#Produccion
+# Produccion
+# API (FastAPI)
 5. docker-compose up --build 
-#Para detener el docker docker-compose down -v
-
-API (FastAPI)
-
-
-#TEST
-6. python -m src.core.evaluate
-7. python scripts/compare_models.py
-
 # front
-8. streamlit run app/streamlit_app.py
+6. streamlit (dockerfile)
+
+# Para detener el docker docker-compose down -v
+
+
+# TEST
+7. python -m src.core.evaluate
+8. python scripts/compare_models.py
+
+
 
 El sistema se compone de:
 
@@ -114,7 +121,7 @@ una API para inferencia en producción,
 un script para evaluación comparativa,
 y una interfaz de usuario con Streamlit para interacción con el modelo.
 
-# en sistemas de ML en producción, el entrenamiento y la inferencia suelen separarse. El entrenamiento es costoso y se ejecuta offline, mientras que la API en producción debe ser ligera, rápida y estable.
+# En sistemas de ML en producción, el entrenamiento y la inferencia suelen separarse. El entrenamiento es costoso y se ejecuta offline, mientras que la API en producción debe ser ligera, rápida y estable.
 
 
 
@@ -127,8 +134,8 @@ Streamlit → usa API ✅
 
 
 
-Pipeline completo
-  ┌───────────────────────┐
+                    Pipeline completo
+                ┌───────────────────────┐
                 │   ROBFLOW DATASET     │
                 │ (imágenes + labels)   │
                 └──────────┬────────────┘
@@ -171,9 +178,9 @@ Pipeline completo
 
 Produccion 
 
-  ┌───────────────────────┐
+                ┌───────────────────────┐
                 │ docker-compose up     │
-                │ (levanta API)         │
+                │ (levanta API y front) │
                 └──────────┬────────────┘
                            │
                            ▼
@@ -210,3 +217,21 @@ Visualizacion
           │ ✅ YOLO predicción               │
           │ ✅ GradCAM (heatmap)             │
           └──────────────────────────────────┘
+
+# Notas:
+# Data lakage
+Se evitó data leakage mediante la separación estricta de los conjuntos de entrenamiento y prueba, y utilizando transformaciones distintas para cada uno.
+NO mezclar transforms
+
+# TRAINING-SERVING SKEW
+ ocurre cuando:
+modelo ve datos distintos en producción que en training
+
+Para prevenir training-serving skew, se unificaron las transformaciones utilizadas en entrenamiento y en producción mediante un módulo compartido de preprocessing.
+
+
+train.py Entrenar modelo 
+Se utilizó CrossEntropyLoss ya que es la función estándar para problemas de clasificación, permitiendo medir la diferencia entre las predicciones del modelo y las etiquetas reales.
+Se utilizó Adam debido a su capacidad de adaptar automáticamente el learning rate y acelerar la convergencia durante el entrenamiento.
+
+model.py Se utilizó un modelo ResNet18 preentrenado sobre el cual se aplicó fine-tuning, entrenando todas las capas del modelo para adaptarlo al problema específico.

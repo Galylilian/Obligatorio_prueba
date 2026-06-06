@@ -1,11 +1,10 @@
+#Se utilizó un modelo ResNet18 preentrenado sobre el cual se aplicó fine-tuning, entrenando todas las capas del modelo para adaptarlo al problema específico.
 import torch.nn as nn
-import torchvision.models as models
+from torchvision.models import resnet18, ResNet18_Weights
 
 def get_model():
-    model = models.resnet18(pretrained=True)
-
-    for param in model.parameters():
-        param.requires_grad = False
+    weights = ResNet18_Weights.DEFAULT
+    model = resnet18(weights=weights)
 
     model.fc = nn.Linear(model.fc.in_features, 2)
 

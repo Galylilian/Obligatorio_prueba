@@ -1,8 +1,17 @@
+import warnings
+warnings.filterwarnings("ignore")
 import os
+import pathlib
 import torch
 
 from src.core.model import get_model
 from src.data.dataset import get_dataloaders
+
+# =============================
+# HIPERPARÁMETROS ✅
+# =============================
+EPOCHS = 2  # para pruebas rápidas, aumentar para mejor rendimiento
+LEARNING_RATE = 0.0005
 
 # =============================
 # DATOS
@@ -24,9 +33,21 @@ model = get_model().to(device)
 # ENTRENAMIENTO
 # =============================
 criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.fc.parameters(), lr=0.001)
 
-for epoch in range(2):   # solo 2 epochs para demo
+# ✅ FINE-TUNING (entrena TODAS las capas)
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+# ✅ SCHEDULER (reduce learning rate progresivamente)
+scheduler = torch.optim.lr_scheduler.StepLR(
+    optimizer,
+    step_size=3,   # cada 3 epochs
+    gamma=0.5      # baja a la mitad
+)
+
+# =============================
+# LOOP DE ENTRENAMIENTO
+# =============================
+for epoch in range(EPOCHS):
     model.train()
     total_loss = 0
 
@@ -42,32 +63,37 @@ for epoch in range(2):   # solo 2 epochs para demo
 
         total_loss += loss.item()
 
-    print(f"Epoch {epoch+1}: {total_loss:.4f}")
+    scheduler.step()
+
+    print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {total_loss:.4f}")
 
 # =============================
 # GUARDAR MODELO ✅
 # =============================
-
-BASE_DIR = os.path.dirname(
-    os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    )
-)
-
-models_dir = os.path.join(BASE_DIR, "models")
-os.makedirs(models_dir, exist_ok=True)
-
-model_file = os.path.join(models_dir, "resnet18.pth")
-
-import pathlib
-
-models_dir = pathlib.Path(BASE_DIR) / "models"
+BASE_DIR = pathlib.Path(__file__).resolve().parents[2]
+models_dir = BASE_DIR / "models"
 models_dir.mkdir(parents=True, exist_ok=True)
 
-model_file = models_dir / "resnet18.pth"
+model_path = models_dir / "resnet18.pth"
 
+torch.save(model.state_dict(), model_path)
+print(f"✅ Modelo guardado en: {model_path}")
 
-# guardar
-torch.save(model.state_dict(), str(model_file))
+# =============================
+# ✅ QUANTIZATION (OPTIMIZACIÓN)
+# =============================
+print("⚙️ Aplicando quantization...")
 
-print(f"✅ Modelo guardado en: {model_file}")
+model.cpu()  # necesario para quantization
+
+quantized_model = torch.quantization.quantize_dynamic(
+    model,
+    {torch.nn.Linear},
+    dtype=torch.qint8
+)
+
+quantized_path = models_dir / "resnet18_quantized.pth"
+
+torch.save(quantized_model.state_dict(), quantized_path)
+
+print(f"✅ Modelo cuantizado guardado en: {quantized_path}")

@@ -163,3 +163,4 @@ cython_debug/
 # data files
 /medical-10
 /data
+/data/raw

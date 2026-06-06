@@ -23,10 +23,11 @@ model.eval()
 logger.info("Modelo cargado correctamente ✅")
 
 # === transformaciones ===
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
+
+from src.core.preprocessing.transforms import get_test_transforms
+
+transform = get_test_transforms()
+
 
 
 @router.post("/predict")

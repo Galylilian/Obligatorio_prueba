@@ -7,10 +7,9 @@ import numpy as np
 import cv2
 import io
 
-from torchvision import transforms
-
 from src.core.model import get_model
 from src.core.gradcam import GradCAM, overlay_heatmap
+from src.core.preprocessing.transforms import get_test_transforms
 from src.settings.config import MODEL_PATH, DEVICE
 from src.utils.logger import get_logger
 
@@ -21,7 +20,7 @@ router = APIRouter()
 logger = get_logger("gradcam")
 
 # =============================
-# CARGAR MODELO
+# CARGAR MODELO (UNA VEZ)
 # =============================
 logger.info(f"Cargando modelo para Grad-CAM desde: {MODEL_PATH}")
 
@@ -39,13 +38,9 @@ target_layer = model.layer4[-1]
 grad_cam = GradCAM(model, target_layer)
 
 # =============================
-# TRANSFORMACIONES
+# TRANSFORM (SIN SKEW ✅)
 # =============================
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
-
+transform = get_test_transforms()
 
 # =============================
 # ENDPOINT
@@ -56,29 +51,46 @@ async def generate_gradcam(file: UploadFile):
     logger.info(f"Request Grad-CAM recibido: {file.filename}")
 
     try:
-        # ========= cargar imagen =========
+        # =========================
+        # CARGAR IMAGEN
+        # =========================
         image = Image.open(file.file).convert("RGB")
         input_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
         logger.info("Imagen procesada correctamente")
 
-        # ========= predicción =========
+        # =========================
+        # PREDICCIÓN (sin gradientes)
+        # =========================
         with torch.no_grad():
             output = model(input_tensor)
             pred_class = output.argmax().item()
 
         logger.info(f"Clase predicha: {pred_class}")
 
-        # ========= generar GradCAM =========
+        # =========================
+        # GENERAR GRADCAM (con gradientes)
+        # =========================
         cam = grad_cam.generate(input_tensor)
 
         logger.info("Grad-CAM generado")
 
-        # ========= overlay =========
+        # =========================
+        # NORMALIZACIÓN SEGURA
+        # =========================
+        cam = cam - cam.min()
+        if cam.max() != 0:
+            cam = cam / cam.max()
+
+        # =========================
+        # OVERLAY
+        # =========================
         img_np = np.array(image.resize((224, 224)))
         result = overlay_heatmap(img_np, cam)
 
-        # ========= convertir a imagen (bytes) =========
+        # =========================
+        # CONVERTIR A BYTES
+        # =========================
         _, buffer = cv2.imencode(
             ".jpg",
             cv2.cvtColor(result, cv2.COLOR_RGB2BGR)

@@ -12,12 +12,32 @@ services:
       - "8080:8080"
 
     volumes:
-      - ./src:/app/src          # hot reload código
-      - ./models:/app/models    # acceso al modelo
-    #- ./data:/app/data        # (opcional) datos
+      - ./src:/app/src
+      - ./models:/app/models
 
     environment:
       - PYTHONUNBUFFERED=1
-      - MODEL_PATH=/app/models/resnet18.pth
+      - MODEL_PATH=/app/models/resnet18.pth   # podriamos utilizar usamos el optimizado
+
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+
+    container_name: bed-detector-ui
+
+    ports:
+      - "8501:8501"
+
+    volumes:
+      - ./app:/app/app
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    depends_on:
+      - fastapi
 
     restart: unless-stopped

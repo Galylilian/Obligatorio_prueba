@@ -3,79 +3,76 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-API_URL = "http://localhost:8080"
+API_URL = "http://fastapi:8080"
 
-st.title("Detector de paciente en camilla")
+st.set_page_config(layout="wide")
 
-file = st.file_uploader("Subir imagen", type=["jpg", "png"])
+st.title("🛏️ Detector de paciente en camilla")
 
-if file:
-    # =========================
-    # Mostrar imagen
-    # =========================
-    image = Image.open(file)
-    st.image(image, caption="Imagen original", width="stretch")
+files = st.file_uploader(
+    "Subir imágenes",
+    type=["jpg", "png"],
+    accept_multiple_files=True
+)
 
-    # =========================
-    # CNN
-    # =========================
-    file.seek(0)
-    cnn_resp = requests.post(
-        f"{API_URL}/predict",
-        files={"file": file}
-    )
-    cnn_result = cnn_resp.json()
+if files:
 
-    # =========================
-    # YOLO
-    # =========================
-    file.seek(0)
-    yolo_resp = requests.post(
-        f"{API_URL}/predict_yolo",
-        files={"file": file}
-    )
-    yolo_result = yolo_resp.json()
+    for file in files:
 
-    # =========================
-    # RESULTADOS
-    # =========================
-    st.subheader("Resultados")
+        st.markdown("---")
+        st.subheader(f"📷 {file.name}")
 
-    col1, col2 = st.columns(2)
+        image = Image.open(file)
 
-    with col1:
-        st.write("### CNN")
-        st.json(cnn_result)
+        # =========================
+        # PREDICCIONES
+        # =========================
+        file.seek(0)
+        cnn = requests.post(f"{API_URL}/predict", files={"file": file}).json()
 
-    with col2:
-        st.write("### YOLO")
-        st.json(yolo_result)
+        file.seek(0)
+        yolo = requests.post(f"{API_URL}/predict_yolo", files={"file": file}).json()
 
-    # =========================
-    # GRAD-CAM
-    # =========================
-    file.seek(0)
-    grad_resp = requests.post(
-        f"{API_URL}/gradcam",
-        files={"file": file}
-    )
+        file.seek(0)
+        grad = requests.post(f"{API_URL}/gradcam", files={"file": file})
 
-    # ✅ VALIDACIÓN CORRECTA
-    content_type = grad_resp.headers.get("content-type", "")
+        # =========================
+        # LAYOUT
+        # =========================
+        col1, col2 = st.columns(2)
 
-    if grad_resp.status_code == 200 and "image" in content_type:
-        try:
-            grad_img = Image.open(BytesIO(grad_resp.content))
-            st.image(grad_img, caption="Grad-CAM", width="stretch")
-        except Exception as e:
-            st.error("Error al interpretar GradCAM")
-            st.text(str(e))
+        with col1:
+            st.image(image, caption="Imagen original", use_container_width=True)
 
-    else:
-        st.warning("No se pudo generar Grad-CAM")
+        with col2:
+            content_type = grad.headers.get("content-type", "")
 
-        # 🔥 MOSTRAR ERROR REAL (clave para debug)
-        try:
-            st.text(grad_resp.text)
-        except:
-            st.text("Respuesta inválida del servidor")
+            if grad.status_code == 200 and "image" in content_type:
+                grad_img = Image.open(BytesIO(grad.content))
+                st.image(grad_img, caption="Grad-CAM", use_container_width=True)
+            else:
+                st.warning("No se pudo generar GradCAM")
+
+        # =========================
+        # RESULTADOS
+        # =========================
+        st.markdown("### 🔍 Resultados")
+
+        col1, col2 = st.columns(2)
+
+        def pretty_result(result, title):
+            pred = result.get("prediction", None)
+            label = result.get("label", "N/A")
+
+            color = "green" if pred == 1 else "red"
+
+            st.markdown(f"""
+            ### {title}
+            - **Predicción:** :{color}[{label}]
+            """)
+
+        with col1:
+            pretty_result(cnn, "🧠 CNN")
+
+        with col2:
+            pretty_result(yolo, "🤖 YOLO")

@@ -1,7 +1,7 @@
 import requests
 import os
 
-API_URL = "http://localhost:8080"  # o 8080 si usas Docker
+API_URL = "http://localhost:8080"  #  8080 si usas Docker
 
 test_folder = "data/processed/test/acostado"
 
