@@ -2,102 +2,102 @@
 
 [[← Inicio|Home]] · [[Modelo y entrenamiento]]
 
----
-
-## Flujo completo
-
-```
-1. download_dataset.py   →  data/raw/
-2. fuse_datasets.py      →  data/fused/ + metadata CSV
-3. extract_features.py   →  CSV enriquecido con features
-4. src.core.train        →  models/resnet18_best.pth
-5. src.core.evaluate     →  métricas en consola
-```
+Todo lo que pasa **antes** de levantar la API: bajar datos, entrenar y evaluar. Corré esto una vez (o cuando quieras re-entrenar).
 
 ---
 
-## Comando único
+## El camino completo
+
+```
+1. download   →  baja fotos de Roboflow
+2. fuse       →  une DS1 + DS2 en una sola carpeta
+3. features   →  calcula números extra por imagen (para el EDA)
+4. train      →  entrena ResNet18
+5. evaluate   →  te dice qué tan bien le fue
+```
+
+---
+
+## La forma fácil: un solo comando
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_pipeline.py
 ```
 
-### Flags útiles
+Se sienta, tomá un café ☕ — en CPU puede tardar 20–40 minutos.
 
-| Flag | Efecto |
-|------|--------|
-| `--skip-download` | No descarga de Roboflow (usa `data/raw/` existente) |
-| `--skip-train` | Solo prepara datos, no entrena |
+**Atajos:**
+- `--skip-download` → ya tenés `data/raw/`, no vuelve a bajar
+- `--skip-train` → solo prepara datos, sin entrenar
 
 ---
 
-## Paso a paso
+## Paso a paso (si preferís ir de a uno)
 
-### 1. Descarga (`scripts/download_dataset.py`)
+### 1. Descargar (`download_dataset.py`)
 
-Baja DS1 y DS2 desde Roboflow a `data/raw/`.
+Trae dos datasets de Roboflow a `data/raw/`.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\download_dataset.py
 ```
 
-Requiere `ROBOFLOW_API_KEY` en `.env`.
+Necesitás `ROBOFLOW_API_KEY` en `.env`.
 
 ---
 
-### 2. Fusión (`scripts/fuse_datasets.py`)
+### 2. Fusionar (`fuse_datasets.py`)
 
-Unifica ambos datasets en `data/fused/`:
+Mezcla todo en `data/fused/` con carpetas claras:
 
 ```
-data/fused/
-  train/fall/       train/not_fall/
-  valid/fall/       valid/not_fall/
-  test/fall/        test/not_fall/
+train/fall/    train/not_fall/
+valid/fall/    valid/not_fall/
+test/fall/     test/not_fall/
 ```
 
-Genera: `data/metadata/fall_dataset_fused_metadata.csv`
+También genera un CSV con metadata en `data/metadata/`.
 
 ---
 
-### 3. Features (`scripts/extract_features.py`)
+### 3. Features (`extract_features.py`)
 
-Calcula 9 features tabulares por imagen (brillo, contraste, etc.) y las agrega al CSV.
-
-> El entrenamiento CNN usa solo imágenes; las features sirven para EDA e informe.
+Por cada foto calcula brillo, contraste, etc. **El CNN no usa esto para entrenar** — es para el notebook EDA y el informe.
 
 ---
 
-### 4. Entrenamiento
-
-Ver [[Modelo y entrenamiento]].
+### 4. Entrenar
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.core.train
 ```
 
+Detalles en [[Modelo y entrenamiento]].
+
 ---
 
-### 5. Evaluación
+### 5. Evaluar
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.core.evaluate
 ```
 
+Te imprime accuracy, precision, recall y matriz de confusión.
+
 ---
 
-## Predicción batch (opcional)
+## Extras
 
+**Predicción en lote** (muchas fotos de una carpeta):
 ```powershell
 .\.venv\Scripts\python.exe scripts\batch_predict.py data\fused\test
 ```
 
-Salida: `data/metadata/batch_predictions.csv`
-
----
-
-## Tests
-
+**Tests automáticos:**
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+---
+
+Listo el pipeline → seguí con [[API e inferencia]] o [[Streamlit]].

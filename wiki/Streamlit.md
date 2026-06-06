@@ -2,15 +2,17 @@
 
 [[← Inicio|Home]] · [[API e inferencia]]
 
----
-
-## Requisito
-
-La API debe estar corriendo en **http://localhost:8080** antes de abrir Streamlit.
+Streamlit es la **interfaz visual** para probar el detector sin escribir curl ni JSON. Ideal para la demo del obligatorio.
 
 ---
 
-## Levantar (Windows)
+## Antes de empezar
+
+La **API tiene que estar corriendo** en http://localhost:8080. Si no, Streamlit no tiene a quién preguntarle.
+
+---
+
+## Cómo levantarlo
 
 ```powershell
 cd Obligatorio_prueba
@@ -19,48 +21,52 @@ $env:API_URL = "http://localhost:8080"
 .\.venv\Scripts\streamlit.exe run app\streamlit_app.py --server.port 8501
 ```
 
-Abrir: **http://localhost:8501**
+Abrí: **http://localhost:8501**
+
+> **Tip Windows:** no ejecutes `streamlit_app.py` solo — siempre con `streamlit run app\streamlit_app.py`.
 
 ---
 
-## Qué muestra
+## Qué vas a ver
 
-1. Subir imagen (JPG/PNG)
-2. Imagen original
-3. **Predicción** (`fall` / `not_fall`) con **confianza %**
-4. Gráfico de probabilidades por clase
-5. **Grad-CAM** (mapa de calor)
-6. JSON completo de la respuesta API
-
-Si confianza < 70%, aparece advertencia.
+1. Botón para **subir una foto**
+2. La imagen original
+3. **Predicción** (CAÍDA / NO CAÍDA) con **porcentaje de confianza**
+4. Gráfico de probabilidades
+5. **Grad-CAM** debajo
+6. Si la confianza es baja (< 70%), te avisa en amarillo
 
 ---
 
-## Arquitectura
+## ¿Quién hace el trabajo?
+
+Streamlit **no** carga el modelo. Solo manda la foto a la API y muestra la respuesta:
 
 ```
-Navegador → Streamlit :8501 → HTTP → API :8080 → ResNet18
+Vos → Streamlit → API → ResNet18 → respuesta → pantalla
 ```
-
-Streamlit **no** carga el modelo directamente; delega en la API.
 
 ---
 
-## Imágenes de prueba recomendadas
+## Fotos para probar
+
+Andá a estas carpetas y elegí cualquiera:
 
 ```
 data/fused/test/fall/
 data/fused/test/not_fall/
 ```
 
-Evitar fotos de stock o de internet para la demo — el modelo fue entrenado con Roboflow indoor.
+Evitá fotos de internet o de stock — el modelo se confunde. Con las del test set deberías ver confianzas altas (> 90%).
 
 ---
 
-## Error común
+## Problemas típicos
 
-| Síntoma | Causa | Solución |
-|---------|-------|----------|
-| No hay predicción | API caída | Levantar uvicorn primero |
-| Confianza baja | Imagen fuera de dominio | Usar imágenes del test set |
-| Puerto ocupado | Otra instancia Streamlit | Usar `--server.port 8502` |
+| Te pasa esto | Probablemente… |
+|--------------|----------------|
+| No pasa nada al subir foto | La API no está levantada |
+| Confianza muy baja | Foto fuera del tipo que entrenamos |
+| Puerto 8501 ocupado | Usá `--server.port 8502` |
+
+Más ayuda en [[Solución de problemas]].
