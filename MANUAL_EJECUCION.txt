@@ -1,0 +1,532 @@
+================================================================================
+  MANUAL DE EJECUCION — Deteccion de Caidas (Fall / Not Fall)
+  Proyecto: obligatorio (MLP en Produccion)
+  Sistema: Windows + PowerShell
+  Fecha de referencia: junio 2026
+================================================================================
+
+INDICE
+------
+  0. Que hace este proyecto
+  1. Requisitos previos
+  2. Paso 0 — Preparar entorno
+  3. Paso 1 — Descargar datasets (Roboflow)
+  4. Paso 2 — Fusionar datasets
+  5. Paso 3 — Extraer features tabulares
+  6. Paso 4 — Entrenar modelo
+  7. Paso 5 — Evaluar modelo
+  8. Pipeline completo (un solo comando)
+  9. Paso 6 — Levantar API (FastAPI)
+ 10. Paso 7 — Levantar Streamlit
+ 11. Paso 8 — EDA (notebook Jupyter)
+ 12. Opcional — Prediccion batch, tests, Docker
+ 13. Solucion de problemas
+ 14. Checklist final
+
+
+================================================================================
+0. QUE HACE ESTE PROYECTO
+================================================================================
+
+Clasifica imagenes en dos clases:
+  - fall      → persona caida
+  - not_fall  → situacion normal
+
+Flujo de datos:
+  Roboflow (internet)
+       |
+       v  [Paso 1: download]
+  data/raw/                    (DS1 + DS2 por separado)
+       |
+       v  [Paso 2: fuse]
+  data/fused/                  (dataset unificado, train/valid/test)
+       |
+       v  [Paso 3: extract_features]
+  data/metadata/*.csv          (metadata + features tabulares)
+       |
+       v  [Paso 4: train]
+  models/resnet18_best.pth     (modelo entrenado)
+  models/label_encoder.pkl     (mapeo indice -> etiqueta)
+       |
+       v  [Paso 5: evaluate]
+  metricas en consola
+       |
+       v  [Pasos 6-7: API + Streamlit]
+  inferencia en vivo
+
+
+================================================================================
+1. REQUISITOS PREVIOS
+================================================================================
+
+Software:
+  - Python 3.11 (64 bits recomendado)
+  - Git (opcional)
+  - Cuenta en Roboflow con API key
+
+Carpeta de trabajo (raiz del proyecto):
+  c:\Users\usuario\Desktop\proyectos_cursor\MLP_caidas\obligatorio\obligatorio
+
+Regla importante:
+  SIEMPRE usar el Python del entorno virtual (.venv), NO el python del sistema.
+
+  Correcto:   .\.venv\Scripts\python.exe scripts\download_dataset.py
+  Incorrecto: python scripts\download_dataset.py
+
+
+================================================================================
+2. PASO 0 — PREPARAR ENTORNO
+================================================================================
+
+2.1 Ir a la carpeta del proyecto
+---------------------------------
+  cd c:\Users\usuario\Desktop\proyectos_cursor\MLP_caidas\obligatorio\obligatorio
+
+
+2.2 Crear entorno virtual (solo la primera vez)
+------------------------------------------------
+  py -3.11 -m venv .venv
+
+
+2.3 Instalar dependencias de desarrollo
+----------------------------------------
+  .\.venv\Scripts\python.exe -m pip install --upgrade pip
+  .\.venv\Scripts\pip.exe install -r requirements-dev.txt
+
+  Tiempo estimado: 5-15 minutos (depende de conexion y si hay GPU/CUDA).
+
+
+2.4 Configurar variables de entorno
+------------------------------------
+  copy .env.example .env
+
+  Editar .env y poner tu clave de Roboflow:
+    ROBOFLOW_API_KEY=tu_clave_real_aqui
+
+  Obtener clave: https://app.roboflow.com/ → Settings → API Key
+
+
+2.5 Registrar kernel Jupyter (solo si vas a usar el notebook en Cursor)
+-----------------------------------------------------------------------
+  .\.venv\Scripts\python.exe -m ipykernel install --user --name=obligatorio --display-name="Python (obligatorio)"
+
+
+2.6 Verificar instalacion
+--------------------------
+  .\.venv\Scripts\python.exe --version
+  .\.venv\Scripts\python.exe -c "import torch, roboflow, fastapi, streamlit; print('OK')"
+
+  Resultado esperado:
+    Python 3.11.x
+    OK
+
+
+================================================================================
+3. PASO 1 — DESCARGAR DATASETS (ROBOFLOW)
+================================================================================
+
+Script:  scripts/download_dataset.py
+Entrada: ROBOFLOW_API_KEY en .env
+Salida:  data/raw/fall-detection-raskl/
+         data/raw/fa-nunl5/
+
+Comando:
+  .\.venv\Scripts\python.exe scripts\download_dataset.py
+
+Que hace internamente:
+  - Conecta a Roboflow con tu API key
+  - Descarga DS1: fall-detection-raskl (v2)
+  - Descarga DS2: fa-nunl5 (v1)
+  - Guarda cada dataset en data/raw/
+
+Verificar:
+  Test-Path data\raw\fall-detection-raskl\train
+  Test-Path data\raw\fa-nunl5\train
+
+  Ambos deben devolver True.
+
+Tiempo estimado: 2-10 minutos.
+
+Siguiente paso sugerido:
+  python scripts/fuse_datasets.py
+
+
+================================================================================
+4. PASO 2 — FUSIONAR DATASETS
+================================================================================
+
+Script:  scripts/fuse_datasets.py
+Logica:  src/preprocessing/fusion.py
+Entrada: data/raw/ (DS1 + DS2)
+Salida:  data/fused/{train,valid,test}/{fall,not_fall}/
+         data/metadata/fall_dataset_fused_metadata.csv
+
+Comando:
+  .\.venv\Scripts\python.exe scripts\fuse_datasets.py
+
+Que hace internamente:
+  - Copia imagenes de DS1 y DS2 a data/fused/
+  - Renombra con prefijo DS1_ o DS2_
+  - Normaliza etiquetas a fall / not_fall
+  - Genera CSV con: split, label, path, filename, dataset_source
+
+Verificar:
+  (Get-ChildItem data\fused -Recurse -File | Measure-Object).Count
+  Import-Csv data\metadata\fall_dataset_fused_metadata.csv | Measure-Object
+
+  Resultado esperado (aprox.):
+    ~1373 imagenes
+    ~1373 filas en el CSV
+
+  Balance esperado en consola:
+    train: fall~550, not_fall~514
+    valid: fall~100, not_fall~77
+    test:  fall~73,  not_fall~59
+
+Tiempo estimado: 1-3 minutos.
+
+
+================================================================================
+5. PASO 3 — EXTRAER FEATURES TABULARES
+================================================================================
+
+Script:  scripts/extract_features.py
+Logica:  src/features/tabular_features.py
+Entrada: data/metadata/fall_dataset_fused_metadata.csv
+         data/fused/ (imagenes)
+Salida:  Mismo CSV enriquecido con columnas de features
+         (brightness, contrast, aspect_ratio, etc.)
+
+Comando:
+  .\.venv\Scripts\python.exe scripts\extract_features.py
+
+Que hace:
+  - Por cada imagen calcula 9 valores numericos
+  - Los agrega al CSV de metadata
+  - Si ya existen, imprime "Features tabulares ya presentes" y termina
+
+Verificar:
+  $csv = Import-Csv data\metadata\fall_dataset_fused_metadata.csv
+  $csv[0].PSObject.Properties.Name -match "brightness"
+
+  Debe listar columnas de features.
+
+Nota:
+  El entrenamiento actual (ResNet18) NO usa estas features.
+  Sirven para el EDA del notebook y analisis del informe.
+
+Tiempo estimado: 2-5 minutos.
+
+
+================================================================================
+6. PASO 4 — ENTRENAR MODELO
+================================================================================
+
+Modulo:  src/core/train.py
+Entrada: data/fused/ (train + valid)
+Salida:  models/resnet18_best.pth
+         models/label_encoder.pkl
+
+Comando:
+  .\.venv\Scripts\python.exe -m src.core.train
+
+Que hace internamente:
+  1. Carga imagenes con ImageFolder (src/preprocessing/dataset.py)
+  2. Aplica transforms: resize 224x224, augmentacion en train
+  3. Crea ResNet18 preentrenada (src/core/model.py)
+  4. Congela capas base, entrena solo la ultima capa (transfer learning)
+  5. Entrena 5 epocas (configurable en src/settings/config.py)
+  6. Guarda el modelo con mejor val_acc
+
+Salida esperada en consola (ejemplo):
+  Dispositivo: cpu  (o cuda si hay GPU)
+  Clases: ['fall', 'not_fall']
+  Epoch 1/5 | train_loss=0.60xx | val_loss=0.59xx | val_acc=0.67xx
+  ...
+  Epoch 4/5 | ... | val_acc=0.83xx
+    -> Mejor modelo guardado (val_acc=0.83xx)
+  Modelo guardado en: models/resnet18_best.pth
+
+Verificar:
+  Test-Path models\resnet18_best.pth
+  Test-Path models\label_encoder.pkl
+
+Tiempo estimado:
+  CPU: 8-30 minutos
+  GPU: 2-5 minutos
+
+Parametros editables (.env o src/settings/config.py):
+  NUM_EPOCHS=5
+  BATCH_SIZE=32
+  LEARNING_RATE=0.001
+
+
+================================================================================
+7. PASO 5 — EVALUAR MODELO
+================================================================================
+
+Modulo:  src/core/evaluate.py
+Entrada: models/resnet18_best.pth + data/fused/valid + test
+Salida:  metricas impresas en consola
+
+Comando:
+  .\.venv\Scripts\python.exe -m src.core.evaluate
+
+Que muestra:
+  - Classification report (precision, recall, f1 por clase)
+  - Accuracy en validacion y test
+  - Matriz de confusion
+  - Nota si test es pequeno (usa valid como referencia principal)
+
+Resultado de referencia (puede variar ligeramente):
+  Validacion: accuracy ~83%
+  Test:       accuracy ~76%
+
+Verificar:
+  Debe imprimir "=== Validacion ===" y "=== Test ===" sin errores.
+
+
+================================================================================
+8. PIPELINE COMPLETO (UN SOLO COMANDO)
+================================================================================
+
+Script: scripts/run_pipeline.py
+
+Ejecutar todo (download + fuse + features + train + evaluate):
+  .\.venv\Scripts\python.exe scripts\run_pipeline.py
+
+Solo preparar datos (sin entrenar):
+  .\.venv\Scripts\python.exe scripts\run_pipeline.py --skip-train
+
+Saltear descarga (si ya tenes data/raw/):
+  .\.venv\Scripts\python.exe scripts\run_pipeline.py --skip-download
+
+Orden interno:
+  1. download_dataset.py
+  2. fuse_datasets.py
+  3. extract_features.py
+  4. src.core.train
+  5. src.core.evaluate
+
+
+================================================================================
+9. PASO 6 — LEVANTAR API (FASTAPI)
+================================================================================
+
+Requisito previo: models/resnet18_best.pth debe existir.
+
+Opcion A — Script PowerShell (recomendado):
+  .\scripts\start_api.ps1
+
+Opcion B — Comando manual:
+  cd c:\Users\usuario\Desktop\proyectos_cursor\MLP_caidas\obligatorio\obligatorio
+  $env:PYTHONPATH = (Get-Location).Path
+  .\.venv\Scripts\python.exe -m uvicorn src.api.app:app --app-dir . --host 127.0.0.1 --port 8080 --reload
+
+URLs:
+  Documentacion interactiva:  http://localhost:8080/docs
+  Health check:               http://localhost:8080/health
+  Raiz:                       http://localhost:8080/
+
+Endpoints principales:
+  GET  /health          → {"status": "ok"}
+  POST /predict         → subir imagen, recibe {"prediction": 0|1, "label": "..."}
+  POST /gradcam         → subir imagen, devuelve imagen con mapa de calor
+
+Probar prediccion (PowerShell, reemplazar RUTA_IMAGEN):
+  curl.exe -s -X POST "http://127.0.0.1:8080/predict" -F "file=@RUTA_IMAGEN"
+
+Imagenes de prueba:
+  data\fused\test\fall\
+  data\fused\test\not_fall\
+
+Nota: dejar esta terminal abierta mientras la API corre.
+
+
+================================================================================
+10. PASO 7 — LEVANTAR STREAMLIT
+================================================================================
+
+Requisito previo: API corriendo en http://localhost:8080 (Paso 6).
+
+Opcion A — Script PowerShell:
+  .\scripts\start_streamlit.ps1
+
+Opcion B — Comando manual:
+  $env:PYTHONPATH = (Get-Location).Path
+  $env:API_URL = "http://localhost:8080"
+  .\.venv\Scripts\streamlit.exe run app\streamlit_app.py --server.port 8501
+
+URL:
+  http://localhost:8501
+
+Uso:
+  1. Abrir http://localhost:8501 en el navegador
+  2. Subir una imagen JPG o PNG
+  3. Ver prediccion (fall / not_fall) y mapa Grad-CAM
+
+Arquitectura:
+  Navegador → Streamlit :8501 → API :8080 → ResNet18
+
+
+================================================================================
+11. PASO 8 — EDA (NOTEBOOK JUPYTER)
+================================================================================
+
+Archivo: notebooks/EDA_Caidas.ipynb
+
+En Cursor / VS Code:
+  1. Abrir notebooks/EDA_Caidas.ipynb
+  2. Seleccionar kernel: "Python (obligatorio)" o .venv\Scripts\python.exe
+  3. Ejecutar celdas en este orden:
+
+  Celda                          Accion
+  -----------------------------  ------------------------------------------
+  Imports / configuracion          Ejecutar
+  Semilla                          Ejecutar
+  Modo local (celda nueva)         Ejecutar  ← carga df_fused del pipeline
+  Descarga Roboflow                SALTEAR (ya tenes los datos)
+  Fusion manual                    SALTEAR
+  Balance, leakage, features...    Ejecutar desde aca
+
+Que analiza el notebook:
+  - Balance de clases por split
+  - Contribucion DS1 vs DS2
+  - Propiedades visuales (brillo, contraste)
+  - Data leakage entre train/valid/test
+  - UMAP de features tabulares
+
+Verificar datos antes del notebook (opcional):
+  .\.venv\Scripts\python.exe -c "
+  import sys; from pathlib import Path
+  ROOT = Path('.').resolve(); sys.path.insert(0, str(ROOT))
+  from src.preprocessing.eda_stats import ensure_dataset_available, load_metadata
+  ensure_dataset_available(ROOT)
+  df = load_metadata(ROOT)
+  print('Filas:', len(df))
+  print(df['split'].value_counts())
+  "
+
+
+================================================================================
+12. OPCIONAL — PREDICCION BATCH, TESTS, DOCKER
+================================================================================
+
+12.1 Prediccion batch offline
+------------------------------
+  .\.venv\Scripts\python.exe scripts\batch_predict.py data\fused\test
+
+  Salida: data\metadata\batch_predictions.csv
+
+
+12.2 Tests automaticos
+-----------------------
+  .\.venv\Scripts\python.exe -m pytest
+
+  Solo tests de API:
+  .\.venv\Scripts\python.exe -m pytest tests\api\ -q
+
+
+12.3 Docker (produccion)
+-------------------------
+  Requisito: Docker Desktop instalado y corriendo.
+
+  Solo API:
+    docker compose up --build
+
+  API + Streamlit:
+    docker compose --profile full up --build
+
+  API disponible en: http://localhost:8080
+
+
+================================================================================
+13. SOLUCION DE PROBLEMAS
+================================================================================
+
+Error: "No module named 'urllib3'" (o cualquier modulo)
+  Causa: usaste python del sistema en lugar del .venv
+  Solucion: .\.venv\Scripts\python.exe en todos los comandos
+
+Error: "Falta ROBOFLOW_API_KEY en .env"
+  Causa: .env no configurado
+  Solucion: copy .env.example .env y pegar tu API key
+
+Error: SSL / certificado al descargar Roboflow
+  Causa: problema de certificados en la red/PC
+  Solucion: el script download_dataset.py ya tiene workaround SSL;
+           si falla, verificar firewall o VPN
+
+Error: "El paquete ipykernel no esta instalado"
+  Causa: kernel del notebook apunta a otro Python
+  Solucion: seleccionar kernel "Python (obligatorio)" o .venv\Scripts\python.exe
+
+Error: puerto 8080 ocupado
+  Causa: API ya corriendo en otra terminal
+  Solucion: usar la instancia existente o cerrar el proceso anterior
+
+Error: Streamlit no muestra prediccion
+  Causa: API no esta levantada
+  Solucion: ejecutar Paso 6 antes del Paso 7
+
+Error: UnicodeEncodeError en evaluate (Windows)
+  Causa: caracteres especiales en print
+  Solucion: ya corregido en src/core/evaluate.py (usar ASCII en mensajes)
+
+Entrenamiento muy lento
+  Normal en CPU. Reducir epocas temporalmente: NUM_EPOCHS=2 en .env
+
+
+================================================================================
+14. CHECKLIST FINAL
+================================================================================
+
+Marcar cada item al completarlo:
+
+  [ ] Python 3.11 + .venv creado
+  [ ] requirements-dev.txt instalado
+  [ ] .env con ROBOFLOW_API_KEY
+  [ ] Paso 1: data/raw/ con DS1 y DS2
+  [ ] Paso 2: data/fused/ con ~1373 imagenes + CSV metadata
+  [ ] Paso 3: CSV con columnas de features
+  [ ] Paso 4: models/resnet18_best.pth generado
+  [ ] Paso 5: evaluate ejecutado sin errores
+  [ ] Paso 6: http://localhost:8080/docs responde
+  [ ] Paso 7: http://localhost:8501 funciona
+  [ ] Paso 8: notebook EDA ejecutado (modo local)
+  [ ] (Opcional) pytest pasa
+  [ ] (Opcional) docker compose up funciona
+
+
+================================================================================
+  RESUMEN DE COMANDOS (copiar y pegar en orden)
+================================================================================
+
+cd c:\Users\usuario\Desktop\proyectos_cursor\MLP_caidas\obligatorio\obligatorio
+
+# --- Setup (primera vez) ---
+py -3.11 -m venv .venv
+.\.venv\Scripts\pip.exe install -r requirements-dev.txt
+copy .env.example .env
+# (editar .env con ROBOFLOW_API_KEY)
+
+# --- Pipeline offline ---
+.\.venv\Scripts\python.exe scripts\download_dataset.py
+.\.venv\Scripts\python.exe scripts\fuse_datasets.py
+.\.venv\Scripts\python.exe scripts\extract_features.py
+.\.venv\Scripts\python.exe -m src.core.train
+.\.venv\Scripts\python.exe -m src.core.evaluate
+
+# --- O todo junto ---
+.\.venv\Scripts\python.exe scripts\run_pipeline.py
+
+# --- Produccion local (2 terminales) ---
+.\scripts\start_api.ps1
+.\scripts\start_streamlit.ps1
+
+# --- Tests ---
+.\.venv\Scripts\python.exe -m pytest
+
+================================================================================
+  FIN DEL MANUAL
+================================================================================

@@ -43,7 +43,7 @@ def main():
     primary_split = "valid" if test_n < valid_n else "test"
 
     print(f"Clases: {class_names}")
-    print(f"Tamaños: valid={valid_n}, test={test_n} → evaluación principal en '{primary_split}'")
+    print(f"Tamanos: valid={valid_n}, test={test_n} -> evaluacion principal en '{primary_split}'")
 
     print("\n=== Validación ===")
     valid_metrics = evaluate(model, valid_loader)

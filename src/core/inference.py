@@ -9,7 +9,7 @@ import torch
 from src.core.model import get_model
 from src.preprocessing.transforms import get_eval_transforms
 from src.settings.config import DEVICE, LABEL_ENCODER_PATH, MODEL_PATH
-from src.utils.label_encoder import load_label_encoder
+from src.utils.label_encoder import decode_prediction, load_label_encoder
 
 
 @lru_cache
@@ -28,3 +28,19 @@ def get_label_encoder():
 
 def get_eval_transform():
     return get_eval_transforms()
+
+
+def predict_with_confidence(model, image_tensor, label_encoder):
+    """Devuelve indice, etiqueta, confianza y probabilidades por clase."""
+    with torch.no_grad():
+        logits = model(image_tensor)
+        probs = torch.softmax(logits, dim=1)[0]
+
+    pred_idx = int(probs.argmax().item())
+    confidence = float(probs[pred_idx].item())
+    probabilities = {
+        decode_prediction(label_encoder, i): float(probs[i].item())
+        for i in range(len(probs))
+    }
+    label = decode_prediction(label_encoder, pred_idx)
+    return pred_idx, label, confidence, probabilities

@@ -1,0 +1,15 @@
+# Desarrollo local con hot-reload de la API
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile dev up --build
+
+services:
+  api:
+    environment:
+      APP_ENV: development
+    volumes:
+      - ./src:/app/src
+      - ./models:/app/models
+    command: >
+      uvicorn src.api.app:app
+      --host 0.0.0.0
+      --port 8080
+      --reload

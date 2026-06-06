@@ -1,3 +1,14 @@
+from io import BytesIO
+
+from PIL import Image
+
+
+def test_root_endpoint(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert "endpoints" in data
+
 
 def test_health_endpoint(client):
     response = client.get("/health")
@@ -5,56 +16,23 @@ def test_health_endpoint(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_image_classification_endpoint(client):
-    payload = [
-        "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/cats.png"
-    ]
-
-    response = client.post("/classification/images", json=payload)
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert "images" in data
-    assert len(data["images"]) == 1
-
-    assert "label" in data["images"][0]
-    assert "score" in data["images"][0]
-
-
-def test_image_classification_multiple_inputs(client):
-    payload = [
-        "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/cats.png",
-        "https://images.dog.ceo/breeds/retriever-golden/n02099601_3004.jpg"
-    ]
-
-    response = client.post("/classification/images", json=payload)
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert len(data["images"]) == 2
-
-
-def test_image_classification_empty_input(client):
-    payload = []
-
-    response = client.post("/classification/images", json=payload)
-
-    assert response.status_code == 200
-
-    assert response.json()["images"] == []
-
-
-def test_image_classification_invalid_input(client):
-    response = client.post("/classification/images", json="not a list")
-
+def test_predict_requires_file(client):
+    response = client.post("/predict")
     assert response.status_code == 422
 
 
-def test_image_classification_missing_field(client):
-    response = client.post("/classification/images", json={})
+def test_predict_with_image(client):
+    img = Image.new("RGB", (224, 224), color="red")
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
 
-    assert response.status_code == 422
+    response = client.post(
+        "/predict",
+        files={"file": ("test.jpg", buf, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "label" in data
+    assert data["label"] in ("fall", "not_fall")
