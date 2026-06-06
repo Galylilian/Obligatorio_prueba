@@ -1,51 +1,59 @@
-# Detección de caídas — Wiki del proyecto
+# Bienvenido 👋
 
-**Repositorio:** [Obligatorio_prueba (rama `marcelo`)](https://github.com/Galylilian/Obligatorio_prueba/tree/marcelo)  
-**Curso:** Machine Learning en Producción — ORT Uruguay
+Este es el proyecto del obligatorio de **Machine Learning en Producción** (ORT Uruguay): un detector de caídas que mira una foto y responde si la persona **cayó** o **no**.
 
----
-
-## ¿Qué hace este proyecto?
-
-Sistema de clasificación binaria **Fall / Not Fall** a partir de imágenes:
-
-| Clase | Significado |
-|-------|-------------|
-| `fall` | Persona en situación de caída |
-| `not_fall` | Situación normal (de pie, sentada, etc.) |
-
-Incluye pipeline offline de entrenamiento, API REST (FastAPI), interfaz Streamlit, explicabilidad Grad-CAM y EDA documentado.
+**Repo:** [Obligatorio_prueba · rama `marcelo`](https://github.com/Galylilian/Obligatorio_prueba/tree/marcelo)
 
 ---
 
-## Arquitectura general
+## ¿Qué hace en pocas palabras?
+
+Le das una imagen → el sistema te dice:
+
+| Resultado | Significa |
+|-----------|-----------|
+| `fall` | Parece una caída |
+| `not_fall` | Persona de pie, sentada o en situación normal |
+
+Además tenés:
+- Un **pipeline** para bajar datos, entrenar y evaluar el modelo
+- Una **API** (FastAPI) para usar el modelo desde cualquier app
+- **Streamlit** para probarlo subiendo fotos desde el navegador
+- **Grad-CAM** para ver *dónde* miró la red al decidir
+- Un **notebook EDA** para el informe
+
+---
+
+## ¿Cómo está armado?
+
+Piensalo así:
 
 ```
-Roboflow (DS1 + DS2)
-       ↓
-  Pipeline offline  →  models/resnet18_best.pth
-       ↓
-  API FastAPI :8080  ←  Streamlit :8501
+Roboflow (internet)  →  entrenamos offline  →  guardamos el modelo
+                                                      ↓
+                              Vos subís una foto  →  API  →  respuesta
+                                                      ↑
+                                              Streamlit (interfaz bonita)
 ```
 
 ---
 
-## Índice de la wiki
+## Guías de esta wiki
 
-| Página | Contenido |
-|--------|-----------|
-| [[Instalación y configuración]] | Python, venv, `.env`, dependencias |
-| [[Pipeline offline]] | Download → fuse → features → train → evaluate |
-| [[Modelo y entrenamiento]] | ResNet18, fine-tuning, métricas |
-| [[API e inferencia]] | Endpoints `/predict`, `/gradcam`, confianza |
-| [[Streamlit]] | Interfaz web para subir imágenes |
-| [[EDA y datos]] | Notebook, balance, leakage, features |
-| [[Docker]] | Despliegue con contenedores |
-| [[Solución de problemas]] | Errores frecuentes en Windows |
+| Si querés… | Andá a… |
+|------------|---------|
+| Instalar todo desde cero | [[Instalación y configuración]] |
+| Correr download, fuse, train… | [[Pipeline offline]] |
+| Entender el modelo ResNet18 | [[Modelo y entrenamiento]] |
+| Usar `/predict` y `/gradcam` | [[API e inferencia]] |
+| Abrir la interfaz web | [[Streamlit]] |
+| Hacer el EDA del informe | [[EDA y datos]] |
+| Desplegar con Docker | [[Docker]] |
+| Algo falló 😅 | [[Solución de problemas]] |
 
 ---
 
-## Inicio rápido
+## Arranque rápido (5 comandos)
 
 ```powershell
 git clone -b marcelo https://github.com/Galylilian/Obligatorio_prueba.git
@@ -53,11 +61,15 @@ cd Obligatorio_prueba
 py -3.11 -m venv .venv
 .\.venv\Scripts\pip install -r requirements-dev.txt
 copy .env.example .env
-# Editar ROBOFLOW_API_KEY en .env
+```
+
+Editá `.env` con tu `ROBOFLOW_API_KEY`, y después:
+
+```powershell
 .\.venv\Scripts\python.exe scripts\run_pipeline.py
 ```
 
-Luego levantar servicios:
+Cuando termine el entrenamiento, en **dos terminales**:
 
 ```powershell
 # Terminal 1 — API
@@ -71,28 +83,29 @@ $env:API_URL = "http://localhost:8080"
 
 ---
 
-## Fuentes de datos
+## De dónde salen las fotos
 
-- **DS1:** `fall-detection-raskl` v2 (Roboflow)
-- **DS2:** `fa-nunl5` v1 (Roboflow)
+Usamos dos datasets de Roboflow que fusionamos:
+- **DS1:** `fall-detection-raskl` (v2)
+- **DS2:** `fa-nunl5` (v1)
 
-Dataset fusionado: ~1.373 imágenes en `data/fused/`.
-
----
-
-## Buenas prácticas ML aplicadas
-
-- Balance de clases (`WeightedRandomSampler` + pesos en loss)
-- Chequeo de data leakage entre splits
-- Separación entrenamiento offline vs inferencia en API
-- Checkpoint del mejor modelo por `val_acc`
-- Fine-tuning en dos fases (capa final + `layer4`)
-- Respuesta con **confianza** (`softmax`) en `/predict`
+En total quedan unas **1.373 imágenes** en `data/fused/`.
 
 ---
 
-## Enlaces útiles
+## Cosas que hicimos bien (para el informe)
 
-- [Swagger UI](http://localhost:8080/docs) (con API levantada)
-- [Manual de ejecución local](../blob/marcelo/MANUAL_EJECUCION.txt) (en el repo)
-- [Ejemplos API](../blob/marcelo/docs/api_examples.md)
+- Balanceamos clases para que el modelo no se sesgue
+- Revisamos que no haya **data leakage** entre train y test
+- Separamos entrenamiento (offline) de inferencia (API)
+- Guardamos el mejor modelo según validación
+- Entrenamos en **dos fases** (capa final + fine-tuning)
+- La API devuelve **confianza** además de la etiqueta
+
+---
+
+## Links útiles
+
+- [Swagger](http://localhost:8080/docs) — probá la API en el navegador
+- [Manual de ejecución](../blob/marcelo/MANUAL_EJECUCION.txt) — paso a paso en txt
+- [Ejemplos curl](../blob/marcelo/docs/api_examples.md)

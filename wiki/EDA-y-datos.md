@@ -2,21 +2,25 @@
 
 [[← Inicio|Home]] · [[Pipeline offline]]
 
----
-
-## Estructura de datos
-
-| Carpeta | Contenido |
-|---------|-----------|
-| `data/raw/` | DS1 + DS2 descargados de Roboflow |
-| `data/fused/` | Dataset unificado (train/valid/test × fall/not_fall) |
-| `data/metadata/` | CSV con paths, labels, features tabulares |
-
-**No se versionan en Git** — se generan con el pipeline.
+Esta sección es para el **informe**: entender tus datos antes de confiar ciegamente en el modelo.
 
 ---
 
-## Balance típico (~1.373 imágenes)
+## ¿Dónde vive cada cosa?
+
+| Carpeta | Qué hay |
+|---------|---------|
+| `data/raw/` | Lo que bajó Roboflow (DS1 y DS2 por separado) |
+| `data/fused/` | Todo unificado, listo para entrenar |
+| `data/metadata/` | CSV con info de cada foto + features |
+
+No están en GitHub — los generás con el pipeline en tu PC.
+
+---
+
+## ¿Está balanceado?
+
+Aproximadamente, con ~1.373 fotos:
 
 | Split | fall | not_fall |
 |-------|------|----------|
@@ -24,57 +28,50 @@
 | valid | ~100 | ~77 |
 | test | ~73 | ~59 |
 
+Está razonablemente equilibrado. El notebook te lo grafica mejor.
+
 ---
 
-## Notebook EDA
+## Notebook `EDA_Caidas.ipynb`
 
-Archivo: `notebooks/EDA_Caidas.ipynb`
+### Cómo correrlo sin volverte loco
 
-### Modo local (recomendado)
+Si **ya corriste el pipeline**, no hace falta re-descargar Roboflow:
 
-Si ya corriste el pipeline:
-
-1. Abrir notebook en Cursor/VS Code
+1. Abrí el notebook en Cursor/VS Code
 2. Kernel: **Python (obligatorio)**
-3. Ejecutar celda **Modo local**
-4. **Saltear** celdas de descarga/fusión Roboflow
-5. Ejecutar balance, leakage, features, UMAP
+3. Ejecutá la celda **"Modo local"**
+4. **Saltá** las celdas de descarga y fusión de Roboflow
+5. Seguí con balance, leakage, gráficos, UMAP
 
-### Qué analiza
+### Qué vas a mostrar en el informe
 
-- Balance por split y clase
-- Contribución DS1 vs DS2
-- Propiedades visuales (brillo, contraste)
-- **Data leakage** (duplicados entre train/test)
+- Cuántas fotos hay por clase y por split
+- Cuánto aporta DS1 vs DS2
+- Brillo/contraste por clase
+- Si hay **fugas de datos** (misma foto en train y test — malo)
 - UMAP de features tabulares
 
 ---
 
-## Features tabulares
+## Features tabulares (¿qué son?)
 
-9 valores numéricos por imagen (brillo, contraste, aspect ratio, etc.).
-
-Generados por: `scripts/extract_features.py`  
-Código: `src/features/tabular_features.py`
-
-Usados en EDA; el CNN entrena solo con píxeles.
+Son 9 números por imagen: brillo, contraste, proporción, etc.  
+El CNN **no los usa** para clasificar — sirven para analizar y enriquecer el informe.
 
 ---
 
-## Data leakage
+## Data leakage — ojo con esto
 
-Chequeos en `src/preprocessing/eda_stats.py`:
+Si la misma foto aparece en train y test, las métricas mienten (memorizó, no generalizó).
 
-- Mismo filename base en train y test
-- Duplicados exactos entre splits
-
-Resultado esperado tras fusión correcta: **0 casos** de leakage.
+Nuestro pipeline chequea duplicados. Resultado esperado: **0 casos**. Si ves alguno, algo salió mal en la fusión.
 
 ---
 
-## Prefijos de archivos
+## Prefijos en los nombres de archivo
 
-| Prefijo | Origen |
-|---------|--------|
-| `DS1_` | fall-detection-raskl |
-| `DS2_` | fa-nunl5 |
+- `DS1_` → viene de fall-detection-raskl
+- `DS2_` → viene de fa-nunl5
+
+Así sabés de dónde salió cada imagen.

@@ -2,60 +2,62 @@
 
 [[← Inicio|Home]] · [[Pipeline offline]]
 
----
-
-## Modelo
-
-- **Arquitectura:** ResNet18 preentrenada en ImageNet
-- **Salida:** 2 clases (`fall`, `not_fall`)
-- **Artefactos:**
-  - `models/resnet18_best.pth` — pesos
-  - `models/label_encoder.pkl` — mapeo índice → etiqueta
+Acá explicamos *qué* aprende el modelo y *cómo* lo entrenamos, sin entrar en cada línea de código.
 
 ---
 
-## Entrenamiento en 2 fases
+## El modelo en criollo
 
-| Fase | Qué entrena | Épocas | Learning rate |
-|------|-------------|--------|---------------|
-| 1 — Head | Solo capa `fc` | 3 | 0.001 |
-| 2 — Fine-tune | `layer4` + `fc` | hasta 12 | 0.0001 |
+Usamos **ResNet18**: una red que ya "sabe ver" (entrenada en ImageNet) y la adaptamos a nuestro problema de 2 clases:
 
-Early stopping: 4 épocas sin mejora en `val_acc`.
+- `fall` — caída
+- `not_fall` — todo lo demás
 
-Código: `src/core/train.py` · Config: `src/settings/config.py`
-
----
-
-## Augmentación (train)
-
-- `RandomResizedCrop(224)`
-- Flip horizontal, rotación ±10°
-- `ColorJitter` (brillo/contraste)
-
-Inferencia usa resize 224×224 + normalización ImageNet (sin augmentación).
+Al terminar tenés dos archivos importantes:
+- `models/resnet18_best.pth` — el cerebro
+- `models/label_encoder.pkl` — traduce números a etiquetas
 
 ---
 
-## Balance de clases
+## Entrenamiento en 2 fases (por qué)
 
-- `WeightedRandomSampler` en train
-- Pesos en `CrossEntropyLoss` vía `get_binary_class_weights()`
+No entrenamos toda la red de golpe. Hacemos esto:
+
+| Fase | Qué pasa | Analogía |
+|------|----------|----------|
+| **1** | Solo la última capa aprende (3 épocas) | "Decime fall o not_fall con lo que ya sabés ver" |
+| **2** | Afinamos `layer4` + capa final (hasta 12 épocas) | "Ahora sí, especializate en caídas" |
+
+Si en validación no mejora 4 épocas seguidas, paramos solos (early stopping).
 
 ---
 
-## Métricas de referencia
+## Datos de entrenamiento
 
-| Split | Accuracy aprox. |
-|-------|-------------------|
+- Imágenes a **224×224**
+- En train: rotamos, volteamos, cambiamos brillo (augmentación)
+- En valid/test: solo resize, sin trucos
+
+Para que no gane siempre la clase mayoritaria usamos **balanceo** en el DataLoader y pesos en la loss.
+
+---
+
+## ¿Qué resultados esperar?
+
+Después del fine-tuning, referencia orientativa:
+
+| Conjunto | Accuracy |
+|----------|----------|
 | Validación | ~92% |
 | Test | ~87% |
 
-> Las métricas exactas dependen del hardware y semilla. Ejecutar `evaluate` tras entrenar.
+Corré `evaluate` en tu máquina para ver tus números exactos.
 
 ---
 
-## Parámetros configurables (`.env`)
+## Ajustar parámetros
+
+En `.env` podés tocar:
 
 ```
 NUM_EPOCHS_HEAD=3
@@ -63,15 +65,14 @@ NUM_EPOCHS_FINETUNE=12
 BATCH_SIZE=32
 LEARNING_RATE=0.001
 FINETUNE_LEARNING_RATE=0.0001
-EARLY_STOPPING_PATIENCE=4
 ```
 
 ---
 
-## Limitaciones conocidas
+## Seamos honestos: limitaciones
 
-- Imágenes **fuera del dominio** (fotos de stock, fondos distintos) pueden dar falsos positivos/negativos.
-- Grad-CAM es aproximado; no siempre marca solo al cuerpo.
-- El modelo aprendió de datasets Roboflow indoor; no generaliza a cualquier foto de internet.
+1. **Fotos random de Google** pueden fallar — el modelo aprendió de cámaras indoor de Roboflow, no de fotos de stock con fondo gris.
+2. **Grad-CAM** es una pista, no la verdad — a veces marca el sillón en vez de la persona.
+3. **Confianza baja** (< 70%) = el modelo duda; no confíes ciegamente.
 
-Para demo confiable: usar imágenes de `data/fused/test/`.
+Para la demo del obligatorio, usá imágenes de `data/fused/test/` — ahí funciona mucho mejor.

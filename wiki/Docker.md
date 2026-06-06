@@ -2,28 +2,30 @@
 
 [[← Inicio|Home]]
 
+Docker empaqueta la API (y opcionalmente Streamlit) para correr igual en cualquier servidor — sin pelear con Python en cada máquina.
+
 ---
 
-## Requisitos
+## Antes de arrancar
 
 - Docker Desktop instalado y corriendo
-- Modelo entrenado en `models/resnet18_best.pth` (montado como volumen)
+- Modelo ya entrenado en `models/resnet18_best.pth` (Docker **no** entrena, solo sirve predicciones)
 
 ---
 
-## Solo API
+## Solo la API
 
 ```bash
 docker compose up --build
 ```
 
-API: **http://localhost:8080**
+→ http://localhost:8080
 
-El contenedor monta `./models` como solo lectura.
+El contenedor lee `./models` de tu disco (solo lectura).
 
 ---
 
-## API + Streamlit
+## API + Streamlit juntos
 
 ```bash
 docker compose --profile full up --build
@@ -36,32 +38,19 @@ docker compose --profile full up --build
 
 ---
 
-## Detener
+## Para apagar
 
 ```bash
 docker compose down
 ```
 
-Con volúmenes:
-
-```bash
-docker compose down -v
-```
-
 ---
 
-## Variables en Docker
+## Idea clave
 
-Definidas en `docker-compose.yml`:
+| Qué | Dónde corre |
+|-----|-------------|
+| Entrenar (`train.py`) | Tu PC, offline |
+| Predecir (API) | Docker en producción |
 
-- `APP_ENV=production`
-- `MODEL_PATH=/app/models/resnet18_best.pth`
-- `API_URL=http://api:8080` (Streamlit → API interna)
-
----
-
-## Notas
-
-- El Dockerfile de producción usa `requirements.txt` (sin Roboflow/jupyter).
-- Entrenamiento siempre es **offline** en la máquina host, no dentro del contenedor de inferencia.
-- Copiar `models/` al servidor antes de `docker compose up`.
+Entrenás una vez, copiás `models/` al servidor, levantás Docker. Eso es MLP en producción 🚀

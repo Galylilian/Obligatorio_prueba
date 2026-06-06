@@ -2,15 +2,15 @@
 
 [[← Inicio|Home]]
 
+Cosas que nos pasaron (y cómo las arreglamos). Si tu error no está acá, revisá que estés usando el `.venv`.
+
 ---
 
-## Python / dependencias
+## "No module named 'urllib3'" (o cualquier módulo)
 
-### `No module named 'urllib3'` (o cualquier módulo)
+**Causa:** Corriste `python` del sistema en vez del del proyecto.
 
-**Causa:** Se usó `python` del sistema en lugar del `.venv`.
-
-**Solución:**
+**Arreglo:**
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe scripts\download_dataset.py
@@ -18,78 +18,65 @@
 
 ---
 
-## Roboflow
+## Roboflow no descarga
 
-### `Falta ROBOFLOW_API_KEY en .env`
+**"Falta ROBOFLOW_API_KEY"** → copiá `.env.example` a `.env` y pegá tu clave.
 
-Copiar `.env.example` → `.env` y pegar la clave de [Roboflow](https://app.roboflow.com).
-
-### Error SSL al descargar
-
-El script `download_dataset.py` incluye workaround SSL. Si persiste: revisar firewall/VPN/proxy.
+**Error SSL** → el script ya tiene un workaround; si sigue fallando, probá sin VPN o revisá el firewall.
 
 ---
 
-## PowerShell
+## PowerShell no deja ejecutar `.ps1`
 
-### `Ejecución de scripts deshabilitada` (.ps1)
+**Error:** "ejecución de scripts deshabilitada"
 
-Usar comandos directos en lugar de scripts:
-
+**Arreglo rápido** — corré los comandos a mano:
 ```powershell
 $env:PYTHONPATH = (Get-Location).Path
 .\.venv\Scripts\python.exe -m uvicorn src.api.app:app --app-dir . --port 8080
 ```
 
-O habilitar scripts (solo tu usuario):
+**Arreglo permanente** (solo tu usuario):
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
 ---
 
-## Puertos
+## Puerto 8080 "no permitido" o ocupado
 
-### `[WinError 10013]` puerto 8080
-
-**Causa:** La API ya está corriendo.
-
-**Solución:** Usar la instancia existente en http://localhost:8080/docs o cerrar el proceso anterior.
-
-### Streamlit puerto 8501 ocupado
-
-```powershell
-.\.venv\Scripts\streamlit.exe run app\streamlit_app.py --server.port 8502
-$env:API_URL = "http://localhost:8080"
-```
+Casi siempre la API **ya está corriendo**. Abrí http://localhost:8080/docs — si carga, no necesitás levantar otra.
 
 ---
 
-## Modelo / predicciones
+## Streamlit no muestra nada
 
-### API devuelve predicciones viejas tras reentrenar
-
-Reiniciar uvicorn (Ctrl+C y volver a levantar).
-
-### Falso positivo con foto de internet
-
-Normal: el modelo fue entrenado con Roboflow indoor. Probar con `data/fused/test/`.
-
-### Confianza baja (< 70%)
-
-El modelo no está seguro. Revisar calidad de imagen y dominio. Ver barra de probabilidades en Streamlit.
-
-### Grad-CAM confuso
-
-El heatmap es aproximado y la imagen se reduce a 224×224. Ver [[Modelo y entrenamiento#Limitaciones conocidas]].
+1. ¿La API está en :8080? → `curl http://localhost:8080/health`
+2. ¿`API_URL` apunta bien? → `$env:API_URL = "http://localhost:8080"`
 
 ---
 
-## Jupyter / notebook
+## El modelo se equivoca con fotos de internet
 
-### `ipykernel no instalado`
+**Es normal.** Entrenamos con Roboflow indoor, no con Getty Images. Para la demo usá `data/fused/test/`.
 
-Seleccionar kernel `.venv\Scripts\python.exe` o instalar:
+---
+
+## Confianza baja (< 70%)
+
+El modelo duda. Mirá el gráfico de probabilidades en Streamlit. No es bug — es señal de incertidumbre.
+
+---
+
+## Reentrené pero la API responde igual
+
+Reiniciá uvicorn. La API cachea el modelo en memoria.
+
+---
+
+## Notebook: "ipykernel no instalado"
+
+Elegí el kernel `.venv\Scripts\python.exe` o:
 ```powershell
 .\.venv\Scripts\pip install ipykernel
 .\.venv\Scripts\python.exe -m ipykernel install --user --name=obligatorio
@@ -97,24 +84,23 @@ Seleccionar kernel `.venv\Scripts\python.exe` o instalar:
 
 ---
 
-## Git / GitHub
+## Git push falla por SSL
 
-### Error SSL con `git push`
-
+Workaround temporal:
 ```powershell
 $env:GIT_SSL_NO_VERIFY='true'
 git push obligatorio_prueba marcelo
 ```
 
-(Solo workaround temporal; ideal arreglar certificados del sistema.)
-
 ---
 
-## Checklist rápido
+## Checklist del "¿por qué no anda?"
 
-- [ ] Python 3.11 + `.venv` activo
-- [ ] `requirements-dev.txt` instalado
-- [ ] `.env` con `ROBOFLOW_API_KEY`
-- [ ] `models/resnet18_best.pth` existe
-- [ ] API responde en `/health`
-- [ ] Streamlit apunta a `API_URL` correcta
+- [ ] ¿Estoy en la carpeta del proyecto?
+- [ ] ¿Uso `.\.venv\Scripts\python.exe`?
+- [ ] ¿Existe `.env` con Roboflow key?
+- [ ] ¿Hay `models/resnet18_best.pth`?
+- [ ] ¿La API responde en `/health`?
+- [ ] ¿Streamlit tiene `API_URL` correcta?
+
+Si todo es sí y sigue fallando, revisá la terminal — el error suele estar ahí.

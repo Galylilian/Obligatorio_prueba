@@ -2,6 +2,8 @@
 
 [[← Inicio|Home]] · [[Streamlit]]
 
+La API es cómo el resto del mundo usa tu modelo: mandás una foto, te devuelve `fall` o `not_fall`.
+
 ---
 
 ## Levantar la API
@@ -9,33 +11,29 @@
 ```powershell
 cd Obligatorio_prueba
 $env:PYTHONPATH = (Get-Location).Path
-.\.venv\Scripts\python.exe -m uvicorn src.api.app:app --app-dir . --host 127.0.0.1 --port 8080 --reload
+.\.venv\Scripts\python.exe -m uvicorn src.api.app:app --app-dir . --port 8080 --reload
 ```
 
-Documentación interactiva: **http://localhost:8080/docs**
+Dejá esa terminal abierta. Probala en: **http://localhost:8080/docs** (Swagger — podés subir fotos ahí mismo).
 
 ---
 
-## Endpoints
+## Endpoints que importan
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/health` | Estado del servicio |
-| GET | `/` | Lista de endpoints |
-| POST | `/predict` | Clasificación Fall / Not Fall |
-| POST | `/gradcam` | Mapa de calor explicativo (JPEG) |
+| Ruta | Qué hace |
+|------|----------|
+| `GET /health` | "¿Estás vivo?" → `{"status":"ok"}` |
+| `POST /predict` | Clasifica la imagen |
+| `POST /gradcam` | Devuelve foto con mapa de calor |
 
 ---
 
-## POST `/predict`
+## `/predict` — la estrella
 
-**Request:** `multipart/form-data` con campo `file` (imagen JPG/PNG)
-
-**Response:**
+Subís una imagen, recibís algo así:
 
 ```json
 {
-  "prediction": 0,
   "label": "fall",
   "confidence": 0.9542,
   "probabilities": {
@@ -45,42 +43,36 @@ Documentación interactiva: **http://localhost:8080/docs**
 }
 ```
 
-- `confidence`: probabilidad softmax de la clase predicha (0–1)
-- Confianza **< 0.70** → el modelo no está seguro
+- **confidence** = qué tan seguro está (de 0 a 1)
+- Si es **menor a 0.70**, tratá la respuesta con cautela
 
-### Ejemplo curl
-
+**Ejemplo con curl:**
 ```bash
-curl -X POST http://localhost:8080/predict \
-  -F "file=@data/fused/test/fall/ejemplo.jpg"
+curl -X POST http://localhost:8080/predict -F "file=@mi_foto.jpg"
 ```
 
 ---
 
-## POST `/gradcam`
+## `/gradcam` — ¿dónde miró?
 
-Devuelve imagen JPEG con heatmap superpuesto.
+Devuelve una imagen JPEG con colores encima:
+- **Rojo/amarillo** → zonas que más influyeron
+- **Azul** → casi no importaron
 
-```bash
-curl -X POST http://localhost:8080/gradcam \
-  -F "file=@imagen.jpg" \
-  --output gradcam.jpg
-```
-
-**Colores:** rojo = zonas más influyentes en la decisión; azul = poco relevante.
+No es perfecto, pero ayuda a explicar la decisión en el informe.
 
 ---
 
-## Reiniciar tras reentrenar
+## Reentrenaste el modelo?
 
-La API cachea el modelo en memoria. Después de `train.py`, **reiniciar uvicorn** para cargar los nuevos pesos.
+La API guarda el modelo en memoria. Después de `train.py`, **reiniciá uvicorn** (Ctrl+C y volvé a correr el comando) para que cargue los pesos nuevos.
 
 ---
 
-## Arquitectura inferencia
+## Por dentro (resumen)
 
 ```
-Imagen → transform (224×224) → ResNet18 → softmax → label + confidence
+Foto → resize 224×224 → ResNet18 → softmax → etiqueta + confianza
 ```
 
-Código: `src/api/routers/predict.py` · `src/core/inference.py`
+Código: `src/api/routers/predict.py`

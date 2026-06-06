@@ -1,21 +1,21 @@
 # Instalación y configuración
 
-[[← Inicio|Home]]
+[[← Volver al inicio|Home]]
+
+Acá te explicamos cómo dejar el proyecto andando en tu máquina. No hace falta ser experto en DevOps: seguí los pasos en orden.
 
 ---
 
-## Requisitos
+## ¿Qué necesitás?
 
-| Requisito | Detalle |
-|-----------|---------|
-| Python | **3.11** (64 bits recomendado) |
-| SO | Windows, Linux o macOS |
-| Cuenta Roboflow | Para descargar datasets |
-| Git | Opcional, para clonar el repo |
+- **Python 3.11** (64 bits, si podés)
+- Una cuenta en **Roboflow** (gratis) para bajar los datasets
+- **Git** si vas a clonar el repo
+- Windows, Linux o macOS — probamos sobre todo en Windows
 
 ---
 
-## Clonar el repositorio
+## 1. Clonar el repo
 
 ```bash
 git clone -b marcelo https://github.com/Galylilian/Obligatorio_prueba.git
@@ -24,80 +24,91 @@ cd Obligatorio_prueba
 
 ---
 
-## Entorno virtual
+## 2. Crear el entorno virtual
 
-### Windows (PowerShell)
-
+**Windows:**
 ```powershell
 py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements-dev.txt
+.\.venv\Scripts\pip install -r requirements-dev.txt
 ```
 
-### Linux / macOS
-
+**Linux / macOS:**
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
 
+Tarda unos minutos la primera vez (descarga PyTorch, FastAPI, etc.).
+
 ---
 
-## Variables de entorno
+## 3. Configurar el `.env`
 
 ```powershell
-copy .env.example .env   # Windows
-cp .env.example .env     # Linux/macOS
+copy .env.example .env
 ```
 
-| Variable | Descripción | Ejemplo |
-|----------|-------------|---------|
-| `ROBOFLOW_API_KEY` | Clave API Roboflow | Obtener en [app.roboflow.com](https://app.roboflow.com) |
-| `MODEL_PATH` | Pesos del modelo | `models/resnet18_best.pth` |
-| `DATA_DIR` | Dataset fusionado | `data/fused` |
-| `API_URL` | URL API (Streamlit) | `http://localhost:8080` |
-| `APP_ENV` | Entorno | `development` |
+Abrí `.env` y pegá tu clave de Roboflow:
 
-Configuración central: `src/settings/config.py`.
+```
+ROBOFLOW_API_KEY=tu_clave_aqui
+```
+
+La sacás de [app.roboflow.com](https://app.roboflow.com) → Settings → API Key.
+
+| Variable | Para qué sirve |
+|----------|----------------|
+| `ROBOFLOW_API_KEY` | Descargar datasets |
+| `MODEL_PATH` | Dónde está el `.pth` entrenado |
+| `API_URL` | Streamlit sabe a qué API pegarle |
+| `DATA_DIR` | Carpeta `data/fused` |
+
+Todo centralizado también en `src/settings/config.py`.
 
 ---
 
-## Regla importante
+## ⚠️ Regla de oro
 
-**Siempre** usar el Python del `.venv`:
+**Usá siempre el Python del `.venv`**, no el del sistema:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\download_dataset.py   # ✅
-python scripts\download_dataset.py                        # ❌ puede fallar
+.\.venv\Scripts\python.exe scripts\download_dataset.py   ✅
+python scripts\download_dataset.py                        ❌ suele fallar
 ```
+
+Si ves `No module named 'urllib3'`, casi seguro es porque corriste el segundo.
 
 ---
 
-## Kernel Jupyter (para EDA)
+## 4. Notebook EDA (opcional)
+
+Si vas a usar `notebooks/EDA_Caidas.ipynb` en Cursor o VS Code:
 
 ```powershell
 .\.venv\Scripts\python.exe -m ipykernel install --user --name=obligatorio --display-name="Python (obligatorio)"
 ```
 
-En Cursor/VS Code: seleccionar kernel **Python (obligatorio)** al abrir `notebooks/EDA_Caidas.ipynb`.
+Elegí ese kernel al abrir el notebook.
 
 ---
 
-## Verificar instalación
+## 5. ¿Quedó bien?
 
 ```powershell
-.\.venv\Scripts\python.exe --version
-.\.venv\Scripts\python.exe -c "import torch, roboflow, fastapi, streamlit; print('OK')"
+.\.venv\Scripts\python.exe --version          # Python 3.11.x
+.\.venv\Scripts\python.exe -c "import torch; print('OK')"
 ```
+
+Si imprime `OK`, seguí con [[Pipeline offline]].
 
 ---
 
-## Qué NO se sube a GitHub
+## Qué NO va a GitHub (y está bien)
 
-- `.env` (contiene API keys)
-- `.venv/`
-- `data/` (imágenes)
-- `models/` (pesos entrenados)
+- `.env` — tiene tu API key
+- `.venv/` — tu entorno local
+- `data/` — las imágenes pesan mucho
+- `models/` — los pesos se generan al entrenar
 
-Estos se generan localmente después de clonar.
+Cada persona los crea en su PC después de clonar.
