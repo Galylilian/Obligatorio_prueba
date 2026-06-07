@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -11,7 +12,7 @@ _SessionLocal = None
 
 
 def analytics_enabled() -> bool:
-    return bool(settings.database_url)
+    return bool(settings.effective_database_url)
 
 
 def get_engine():
@@ -19,7 +20,16 @@ def get_engine():
     if not analytics_enabled():
         return None
     if _engine is None:
-        _engine = create_engine(settings.database_url, pool_pre_ping=True)
+        url = settings.effective_database_url
+        if url.startswith("sqlite"):
+            db_path = url.replace("sqlite:///", "")
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            _engine = create_engine(
+                url,
+                connect_args={"check_same_thread": False},
+            )
+        else:
+            _engine = create_engine(url, pool_pre_ping=True)
         _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
     return _engine
 
@@ -31,6 +41,9 @@ def init_db() -> None:
         engine = get_engine()
         if engine is not None:
             Base.metadata.create_all(bind=engine)
+            from src.analytics.metrics_store import seed_model_metrics_from_file
+
+            seed_model_metrics_from_file()
     except Exception as exc:
         from src.utils.logger import get_logger
 

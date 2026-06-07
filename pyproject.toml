@@ -1,9 +1,9 @@
 [project]
-name = "ortmlprod-mar2025-practico-5-model-serving-practico-5-2025"
-version = "0.1.0"
+name = "detector_caidas"
+version = "1.0"
 description = ""
 authors = [
-    {name = "Santiago Morón Santos",email = "santimoron001@gmail.com"}
+    {name = "Marcelo Garcia",email = "mjgarciatecco@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.10"

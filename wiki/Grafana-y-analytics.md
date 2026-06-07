@@ -2,7 +2,7 @@
 
 [[← Inicio|Home]] · [[Docker]]
 
-Además de predecir caídas, el proyecto puede **registrar eventos** y mostrar KPIs en **Grafana**. No son pacientes clínicos: son **personas** monitoreadas (`person_id`).
+Además de predecir caídas, el proyecto puede **registrar eventos** y mostrar KPIs en **Grafana**. Se trata de **personas** monitoreadas (`person_id`).
 
 ---
 
@@ -76,7 +76,20 @@ docker compose --profile analytics up --build -d db api grafana
 | Swagger | http://localhost:8080/docs | — |
 | PostgreSQL | localhost:5432 | fallapp / fallapp |
 
-Dashboard precargado: **Deteccion de caidas - KPIs**.
+Dashboard precargado: **Deteccion de caidas - KPIs** (tema oscuro).
+
+Incluye dos secciones:
+
+1. **Rendimiento del modelo (offline)** — accuracy, F1, precision, recall (valid/test), gauges y tabla comparativa.
+2. **KPIs operacionales** — caidas hoy/semana, personas en alto riesgo, confianza promedio, grafico por hora.
+
+Para cargar/actualizar metricas del modelo en Grafana:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sync_model_metrics.ps1
+```
+
+Eso ejecuta `src.core.evaluate` y guarda en `models/evaluation_metrics.json` + PostgreSQL.
 
 ---
 
@@ -134,6 +147,28 @@ Si `docker` no se reconoce en PowerShell:
 2. Instalá y reiniciá la PC si lo pide
 3. Abrí Docker Desktop (ícono de ballena en la bandeja)
 4. Volvé a correr `start_analytics.ps1`
+
+### Error -102 en `localhost:3000`
+
+Significa que **Grafana no está levantado**. Causa habitual en Windows: **WSL sin distro Linux** → Docker no arranca.
+
+**Reparación automática** (PowerShell **como Administrador**):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\fix_wsl_docker.ps1
+```
+
+Después de reiniciar la PC:
+
+```powershell
+.\scripts\start_analytics.ps1
+```
+
+**Sin Docker:** usá Streamlit en http://localhost:8501 (muestra los mismos KPIs de `/dashboard/stats`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start_all_local.ps1
+```
 
 ---
 

@@ -7,6 +7,19 @@ if (-not (Test-Path ".env")) {
     Write-Host "Creado .env desde .env.example"
 }
 
+$dockerOk = $false
+try {
+    docker info 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $dockerOk = $true }
+} catch {}
+
+if (-not $dockerOk) {
+    Write-Host "Docker no esta corriendo." -ForegroundColor Red
+    Write-Host "Ejecuta como Administrador: powershell -ExecutionPolicy Bypass -File .\scripts\fix_wsl_docker.ps1"
+    Write-Host "Alternativa sin Grafana: powershell -ExecutionPolicy Bypass -File .\scripts\start_all_local.ps1"
+    exit 1
+}
+
 Write-Host "Levantando PostgreSQL + API + Grafana..."
 $env:DATABASE_URL = "postgresql+psycopg2://fallapp:fallapp@db:5432/fall_analytics"
 docker compose --profile analytics up --build -d db api grafana
