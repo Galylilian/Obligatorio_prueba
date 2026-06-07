@@ -10,7 +10,7 @@ from src.data.dataset import get_dataloaders
 # =============================
 # HIPERPARÁMETROS ✅
 # =============================
-EPOCHS = 2  # para pruebas rápidas, aumentar para mejor rendimiento
+EPOCHS = 4  # para pruebas rápidas, aumentar para mejor rendimiento
 LEARNING_RATE = 0.0005
 
 # =============================
