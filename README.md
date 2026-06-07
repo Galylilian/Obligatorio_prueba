@@ -94,10 +94,13 @@ python -m venv venv
 # offline 
 1. pip install -r requirements.txt
 2. python scripts/download_dataset.py
-3. python scripts/convert_dataset.py
+3. python scripts/convert_dataset.py 
 4. python -m src.core.train
+    python scripts/video_predict.py  video
 
 download → convert → train → evaluate
+# TEST
+7. python -m src.core.evaluate
 
 # Produccion
 # API (FastAPI)
@@ -108,8 +111,8 @@ download → convert → train → evaluate
 # Para detener el docker docker-compose down -v
 
 
-# TEST
-7. python -m src.core.evaluate
+
+
 8. python scripts/compare_models.py
 
 

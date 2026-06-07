@@ -1,4 +1,6 @@
 import torch
+import json
+from pathlib import Path
 
 from src.core.model import get_model
 from src.data.dataset import get_dataloaders
@@ -13,12 +15,11 @@ _, test_loader = get_dataloaders()
 # =============================
 # MODELO
 # =============================
-model = get_model()
+model = get_model(pretrained=False)
 model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
 model.to(DEVICE)
 model.eval()
 
-# ✅ IMPORTANTE (esto faltaba)
 y_true = []
 y_pred = []
 
@@ -40,6 +41,11 @@ with torch.no_grad():
 # =============================
 metrics = compute_metrics(y_true, y_pred)
 
-print("\n📊 RESULTADOS:")
-for k, v in metrics.items():
-    print(f"{k}: {v}")
+# ✅ GUARDAR A JSON
+metrics_path = Path("metrics.json")
+
+with open(metrics_path, "w") as f:
+    json.dump(metrics, f)
+
+print("\n✅ Métricas guardadas en metrics.json")
+print(metrics)
