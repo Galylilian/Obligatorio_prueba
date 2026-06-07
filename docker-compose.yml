@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
 
-    container_name: bed-detector-api
+    container_name: caida-detector-api
 
     ports:
       - "8080:8080"
@@ -14,6 +14,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./models:/app/models
+      - ./metrics.json:/app/metrics.json
 
     environment:
       - PYTHONUNBUFFERED=1
@@ -26,7 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile.streamlit
 
-    container_name: bed-detector-ui
+    container_name: caida-detector-ui
 
     ports:
       - "8501:8501"

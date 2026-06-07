@@ -1,10 +1,7 @@
 from fastapi import APIRouter, UploadFile
 from PIL import Image
-import torch
-from torchvision import transforms
 
-from src.core.model import get_model
-from src.settings.config import MODEL_PATH, DEVICE
+from src.core.classification import ImageClassifier
 from src.utils.logger import get_logger
 
 # === logger ===
@@ -12,22 +9,10 @@ logger = get_logger("predict")
 
 router = APIRouter()
 
-# === cargar modelo ===
-logger.info(f"Cargando modelo desde: {MODEL_PATH}")
-
-model = get_model()
-model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
-model.to(DEVICE)
-model.eval()
+# Instancia global (se carga una sola vez)
+classifier = ImageClassifier()
 
 logger.info("Modelo cargado correctamente ✅")
-
-# === transformaciones ===
-
-from src.core.preprocessing.transforms import get_test_transforms
-
-transform = get_test_transforms()
-
 
 
 @router.post("/predict")
@@ -35,19 +20,20 @@ async def predict(file: UploadFile):
     logger.info(f"Request recibido: {file.filename}")
 
     try:
-        # cargar imagen
+        # Cargar imagen
         image = Image.open(file.file).convert("RGB")
-        image = transform(image).unsqueeze(0).to(DEVICE)
 
-        logger.info("Imagen procesada correctamente")
+        logger.info("Imagen cargada correctamente")
 
-        # inferencia
-        with torch.no_grad():
-            pred = model(image).argmax().item()
+        # Ejecutar predicción
+        prediction = classifier.predict([image])["images"][0]
 
-        logger.info(f"Predicción realizada: {pred}")
+        logger.info(f"Predicción: {prediction}")
 
-        return {"prediction": pred}
+        return {
+            "label": prediction["label"],
+            "confidence": prediction["confidence"],
+        }
 
     except Exception as e:
         logger.error(f"Error en predicción: {str(e)}")
