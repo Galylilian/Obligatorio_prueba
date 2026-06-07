@@ -39,6 +39,17 @@ class Settings(BaseSettings):
 
     roboflow_api_key: str | None = None
 
+    database_url: str | None = None
+    high_risk_min_falls_week: int = 2
+
+    @property
+    def effective_database_url(self) -> str | None:
+        if self.database_url:
+            return self.database_url
+        if self.app_env == "development":
+            return "sqlite:///./data/analytics/fall_analytics.db"
+        return None
+
     @property
     def device(self) -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"

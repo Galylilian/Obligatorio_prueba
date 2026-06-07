@@ -55,6 +55,26 @@ def main():
     print(test_metrics["report"])
     print(test_metrics)
 
+    from src.analytics.metrics_store import persist_model_metrics
+
+    persist_model_metrics(
+        {
+            "valid": {
+                "accuracy": valid_metrics["accuracy"],
+                "precision": valid_metrics["precision"],
+                "recall": valid_metrics["recall"],
+                "f1_score": valid_metrics["f1_score"],
+            },
+            "test": {
+                "accuracy": test_metrics["accuracy"],
+                "precision": test_metrics["precision"],
+                "recall": test_metrics["recall"],
+                "f1_score": test_metrics["f1_score"],
+            },
+        }
+    )
+    print(f"\nMetricas guardadas en models/evaluation_metrics.json y analytics DB.")
+
     if primary_split == "valid":
         print("\nNota: test es pequeño; usar métricas de valid como referencia principal.")
 
