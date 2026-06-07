@@ -21,6 +21,7 @@ Además tenés:
 - **Streamlit** para probarlo subiendo fotos desde el navegador
 - **Grad-CAM** para ver *dónde* miró la red al decidir
 - Un **notebook EDA** para el informe
+- **Grafana + PostgreSQL** para KPIs de caídas por persona (Caso 7)
 
 ---
 
@@ -49,6 +50,7 @@ Roboflow (internet)  →  entrenamos offline  →  guardamos el modelo
 | Abrir la interfaz web | [[Streamlit]] |
 | Hacer el EDA del informe | [[EDA y datos]] |
 | Desplegar con Docker | [[Docker]] |
+| Dashboard Grafana (KPIs) | [[Grafana y analytics]] |
 | Algo falló 😅 | [[Solución de problemas]] |
 
 ---
@@ -101,6 +103,7 @@ En total quedan unas **1.373 imágenes** en `data/fused/`.
 - Guardamos el mejor modelo según validación
 - Entrenamos en **dos fases** (capa final + fine-tuning)
 - La API devuelve **confianza** además de la etiqueta
+- **Analytics:** eventos en PostgreSQL + dashboard Grafana (caídas por persona)
 
 ---
 
