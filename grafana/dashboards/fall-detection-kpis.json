@@ -1,0 +1,151 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "fall-analytics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 5},
+              {"color": "red", "value": 10}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "fall-analytics"},
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS falls_today FROM prediction_events WHERE label = 'fall' AND created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC')",
+          "refId": "A"
+        }
+      ],
+      "title": "Caidas hoy",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "fall-analytics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null},
+              {"color": "orange", "value": 20},
+              {"color": "red", "value": 40}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "fall-analytics"},
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS falls_week FROM prediction_events WHERE label = 'fall' AND created_at >= NOW() - INTERVAL '7 days'",
+          "refId": "A"
+        }
+      ],
+      "title": "Caidas ultima semana",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "fall-analytics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 3}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "fall-analytics"},
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS high_risk_persons FROM ( SELECT person_id FROM prediction_events WHERE label = 'fall' AND person_id IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days' GROUP BY person_id HAVING COUNT(*) >= 2 ) t",
+          "refId": "A"
+        }
+      ],
+      "title": "Personas en alto riesgo",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "fall-analytics"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 8},
+      "id": 4,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "fall-analytics"},
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS falls FROM prediction_events WHERE label = 'fall' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Caidas por hora",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["falls", "analytics"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Deteccion de caidas - KPIs",
+  "uid": "fall-detection-kpis",
+  "version": 1
+}

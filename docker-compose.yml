@@ -1,4 +1,22 @@
 services:
+  db:
+    profiles: ["analytics", "full"]
+    image: postgres:16-alpine
+    container_name: fall-detector-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fallapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fallapp}
+      POSTGRES_DB: ${POSTGRES_DB:-fall_analytics}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fallapp} -d ${POSTGRES_DB:-fall_analytics}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -14,6 +32,12 @@ services:
       LABEL_ENCODER_PATH: /app/models/label_encoder.pkl
       API_HOST: 0.0.0.0
       API_PORT: 8080
+      DATABASE_URL: ${DATABASE_URL:-}
+      HIGH_RISK_MIN_FALLS_WEEK: ${HIGH_RISK_MIN_FALLS_WEEK:-2}
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
@@ -21,6 +45,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  grafana:
+    profiles: ["analytics", "full"]
+    image: grafana/grafana:11.4.0
+    container_name: fall-detector-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_USER: ${POSTGRES_USER:-fallapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fallapp}
+      POSTGRES_DB: ${POSTGRES_DB:-fall_analytics}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
   streamlit:
     profiles: ["dev", "full"]
@@ -42,3 +86,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+volumes:
+  pgdata:
