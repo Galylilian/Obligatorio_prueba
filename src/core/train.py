@@ -1,17 +1,25 @@
 import warnings
 warnings.filterwarnings("ignore")
-import os
 import pathlib
 import torch
 
 from src.core.model import get_model
 from src.data.dataset import get_dataloaders
+from src.utils.logger import get_logger
+
+logger = get_logger("train")
 
 # =============================
-# HIPERPARÁMETROS ✅
+# HIPERPARÁMETROS
 # =============================
-EPOCHS = 4  # para pruebas rápidas, aumentar para mejor rendimiento
+EPOCHS = 4          # suficiente para fine-tuning con dataset chico
 LEARNING_RATE = 0.0005
+
+# =============================
+# DISPOSITIVO
+# =============================
+device = "cuda" if torch.cuda.is_available() else "cpu"
+logger.info(f"Usando dispositivo: {device}")
 
 # =============================
 # DATOS
@@ -19,35 +27,46 @@ LEARNING_RATE = 0.0005
 train_loader, test_loader = get_dataloaders()
 
 # =============================
-# DISPOSITIVO
-# =============================
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"🚀 Usando dispositivo: {device}")
-
-# =============================
 # MODELO
 # =============================
-model = get_model().to(device)
+# pretrained=True → carga pesos de ImageNet para fine-tuning real
+# Esto es clave cuando el dataset es chico (mejor punto de partida)
+model = get_model(pretrained=True).to(device)
+
+logger.info("Modelo ResNet18 cargado con pesos ImageNet (fine-tuning)")
 
 # =============================
 # ENTRENAMIENTO
 # =============================
 criterion = torch.nn.CrossEntropyLoss()
 
-# ✅ FINE-TUNING (entrena TODAS las capas)
+# Adam con todas las capas — fine-tuning completo
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-# ✅ SCHEDULER (reduce learning rate progresivamente)
+# Scheduler: reduce el learning rate cada 3 epochs a la mitad
 scheduler = torch.optim.lr_scheduler.StepLR(
     optimizer,
-    step_size=3,   # cada 3 epochs
-    gamma=0.5      # baja a la mitad
+    step_size=3,
+    gamma=0.5
 )
+
+# =============================
+# PATHS
+# =============================
+BASE_DIR = pathlib.Path(__file__).resolve().parents[2]
+models_dir = BASE_DIR / "models"
+models_dir.mkdir(parents=True, exist_ok=True)
+
+model_path = models_dir / "resnet18.pth"
 
 # =============================
 # LOOP DE ENTRENAMIENTO
 # =============================
+best_val_accuracy = 0.0
+
 for epoch in range(EPOCHS):
+
+    # ── TRAIN ──────────────────────────────
     model.train()
     total_loss = 0
 
@@ -65,35 +84,59 @@ for epoch in range(EPOCHS):
 
     scheduler.step()
 
-    print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {total_loss:.4f}")
+    # ── VALIDACIÓN ─────────────────────────
+    # Evaluamos en test_loader al final de cada epoch
+    # para saber si el modelo está mejorando y guardar el mejor
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            preds = outputs.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+    val_accuracy = correct / total if total > 0 else 0.0
+
+    logger.info(
+        f"Epoch {epoch+1}/{EPOCHS} | "
+        f"Loss: {total_loss:.4f} | "
+        f"Val Accuracy: {val_accuracy*100:.2f}%"
+    )
+
+    # ── GUARDAR MEJOR MODELO ───────────────
+    # Solo guardamos el modelo si mejoró respecto al epoch anterior
+    # Así evitamos guardar un modelo que empeoró al final
+    if val_accuracy > best_val_accuracy:
+        best_val_accuracy = val_accuracy
+        torch.save(model.state_dict(), model_path)
+        logger.info(f"✅ Mejor modelo guardado (accuracy: {val_accuracy*100:.2f}%)")
+
+logger.info(f"Entrenamiento finalizado. Mejor accuracy: {best_val_accuracy*100:.2f}%")
+logger.info(f"Modelo guardado en: {model_path}")
 
 # =============================
-# GUARDAR MODELO ✅
+# QUANTIZATION (OPTIMIZACIÓN)
 # =============================
-BASE_DIR = pathlib.Path(__file__).resolve().parents[2]
-models_dir = BASE_DIR / "models"
-models_dir.mkdir(parents=True, exist_ok=True)
+# Se aplica sobre el mejor modelo guardado para no perder el best checkpoint
+logger.info("Aplicando quantization al mejor modelo...")
 
-model_path = models_dir / "resnet18.pth"
-
-torch.save(model.state_dict(), model_path)
-print(f"✅ Modelo guardado en: {model_path}")
-
-# =============================
-# ✅ QUANTIZATION (OPTIMIZACIÓN)
-# =============================
-print("⚙️ Aplicando quantization...")
-
-model.cpu()  # necesario para quantization
+# Cargar el mejor modelo para quantizar
+best_model = get_model(pretrained=False)
+best_model.load_state_dict(torch.load(model_path, map_location="cpu"))
+best_model.cpu()  # quantization solo funciona en CPU
+best_model.eval()
 
 quantized_model = torch.quantization.quantize_dynamic(
-    model,
+    best_model,
     {torch.nn.Linear},
     dtype=torch.qint8
 )
 
 quantized_path = models_dir / "resnet18_quantized.pth"
-
 torch.save(quantized_model.state_dict(), quantized_path)
 
-print(f"✅ Modelo cuantizado guardado en: {quantized_path}")
+logger.info(f"✅ Modelo cuantizado guardado en: {quantized_path}")

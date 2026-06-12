@@ -1,6 +1,31 @@
 version: "3.9"
 
 services:
+
+  # =============================
+  # BASE DE DATOS ✅
+  # =============================
+  postgres:
+    image: postgres:15-alpine
+    container_name: caida-detector-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: falldetector
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================
+  # API FASTAPI ✅
+  # =============================
   fastapi:
     build:
       context: .
@@ -18,10 +43,20 @@ services:
 
     environment:
       - PYTHONUNBUFFERED=1
-      - MODEL_PATH=/app/models/resnet18.pth   # podriamos utilizar usamos el optimizado
+      - MODEL_PATH=/app/models/resnet18.pth
+      # ↓ Para usar el modelo cuantizado, cambiá a: MODEL_TYPE=quantized
+      - MODEL_TYPE=normal
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/falldetector
+
+    depends_on:
+      postgres:
+        condition: service_healthy
 
     restart: unless-stopped
 
+  # =============================
+  # FRONTEND STREAMLIT ✅
+  # =============================
   streamlit:
     build:
       context: .
@@ -42,3 +77,34 @@ services:
       - fastapi
 
     restart: unless-stopped
+
+  # =============================
+  # GRAFANA ✅
+  # =============================
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: caida-detector-grafana
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+    depends_on:
+      - postgres
+
+    restart: unless-stopped
+
+# =============================
+# VOLÚMENES PERSISTENTES ✅
+# =============================
+volumes:
+  postgres_data:
+  grafana_data:
