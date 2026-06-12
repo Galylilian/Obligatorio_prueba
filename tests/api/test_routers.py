@@ -1,60 +1,75 @@
 
+import io
+from PIL import Image
+
+
+def _dummy_image_bytes():
+    """Genera una imagen dummy en memoria para usar en tests."""
+    img = Image.new("RGB", (224, 224), color=(100, 100, 100))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+    return buf
+
+
+# =============================
+# HEALTH
+# =============================
 def test_health_endpoint(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_image_classification_endpoint(client):
-    payload = [
-        "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/cats.png"
-    ]
+# =============================
+# PREDICT
+# =============================
+def test_predict_returns_label_and_confidence(client):
+    """El endpoint /predict debe devolver label y confidence."""
+    img_bytes = _dummy_image_bytes()
 
-    response = client.post("/classification/images", json=payload)
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert "images" in data
-    assert len(data["images"]) == 1
-
-    assert "label" in data["images"][0]
-    assert "score" in data["images"][0]
-
-
-def test_image_classification_multiple_inputs(client):
-    payload = [
-        "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/cats.png",
-        "https://images.dog.ceo/breeds/retriever-golden/n02099601_3004.jpg"
-    ]
-
-    response = client.post("/classification/images", json=payload)
+    response = client.post(
+        "/predict",
+        files={"file": ("test.jpg", img_bytes, "image/jpeg")}
+    )
 
     assert response.status_code == 200
 
     data = response.json()
+    assert "label" in data
+    assert "confidence" in data
+    assert data["label"] in ["fall", "no_fall"]
+    assert 0.0 <= data["confidence"] <= 1.0
 
-    assert len(data["images"]) == 2
+
+# =============================
+# GRADCAM
+# =============================
+def test_gradcam_returns_image(client):
+    """El endpoint /gradcam debe devolver una imagen JPEG."""
+    img_bytes = _dummy_image_bytes()
+
+    response = client.post(
+        "/gradcam",
+        files={"file": ("test.jpg", img_bytes, "image/jpeg")}
+    )
+
+    assert response.status_code == 200
+    assert "image" in response.headers.get("content-type", "")
 
 
-def test_image_classification_empty_input(client):
-    payload = []
-
-    response = client.post("/classification/images", json=payload)
+# =============================
+# DASHBOARD
+# =============================
+def test_dashboard_stats_structure(client):
+    """El endpoint /dashboard/stats debe devolver la estructura correcta."""
+    response = client.get("/dashboard/stats")
 
     assert response.status_code == 200
 
-    assert response.json()["images"] == []
-
-
-def test_image_classification_invalid_input(client):
-    response = client.post("/classification/images", json="not a list")
-
-    assert response.status_code == 422
-
-
-def test_image_classification_missing_field(client):
-    response = client.post("/classification/images", json={})
-
-    assert response.status_code == 422
+    data = response.json()
+    assert "total_predictions" in data
+    assert "falls_today" in data
+    assert "falls_week" in data
+    assert "classified_today" in data
+    assert "model" in data

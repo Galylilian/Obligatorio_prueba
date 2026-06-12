@@ -1,25 +1,32 @@
-from src.core.preprocessing import Preprocessor
-from src.structs.payload import TextsPayload
+from PIL import Image
+from src.core.preprocessing.transforms import get_train_transforms, get_test_transforms
+import torch
 
 
-def test_preprocessor():
-    """Function for testing the Preprocessor class."""
-    # Create a preprocessor instance
-    preprocessor = Preprocessor()
+def test_train_transforms_output_shape():
+    """Las transforms de train deben devolver un tensor de 3x224x224."""
+    transform = get_train_transforms()
+    img = Image.new("RGB", (300, 400))
+    tensor = transform(img)
 
-    # Define some example texts to preprocess
-    texts = [
-        "I'm feeling so healthy today!",
-        "My day was not good, but not bad",
-        "I hate when people do this",
-    ]
-    payload = TextsPayload(texts=texts)
+    assert isinstance(tensor, torch.Tensor)
+    assert tensor.shape == (3, 224, 224)
 
-    # Preprocess the texts
-    preprocessed_texts: TextsPayload = preprocessor.preprocess_texts(payload)
 
-    # Check the preprocessed texts
-    assert len(preprocessed_texts.texts) == len(texts)
-    assert all(isinstance(text, str) for text in preprocessed_texts.texts)
-    assert all(len(text) > 0 for text in preprocessed_texts.texts)
-    assert all(text.strip() == text for text in preprocessed_texts.texts)
+def test_test_transforms_output_shape():
+    """Las transforms de test deben devolver un tensor de 3x224x224."""
+    transform = get_test_transforms()
+    img = Image.new("RGB", (640, 480))
+    tensor = transform(img)
+
+    assert isinstance(tensor, torch.Tensor)
+    assert tensor.shape == (3, 224, 224)
+
+
+def test_transforms_are_different():
+    """Train y test transforms deben ser distintas (data augmentation)."""
+    train = get_train_transforms()
+    test = get_test_transforms()
+
+    # el número de transforms debe diferir (train tiene augmentation)
+    assert len(train.transforms) != len(test.transforms)
