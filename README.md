@@ -4,102 +4,115 @@ Sistema de Machine Learning para clasificación binaria de caídas en imágenes 
 
 ---
 
-## Estructura del proyecto
+## Contenido del proyecto
 
 ```
 Obligatorio_prueba/
 │
-├── data/                             # Dataset (NO subir a GitHub)
-│   ├── raw/                          # Dataset original descargado de Roboflow
-│   │   ├── ds1/
-│   │   └── ds2/
-│   └── processed/                    # Dataset convertido a clasificación binaria
-│       ├── train/
-│       │   ├── fall/
-│       │   └── no_fall/
-│       ├── valid/
-│       └── test/
+├── data/                                      # Dataset (NO subir a GitHub)
+│   ├── raw/                                   # Imágenes scrapeadas sin procesar
+│   │   └── scraped/                           # Descargadas por scrape_dataset.py
+│   │       ├── fall/                          # Imágenes de caídas
+│   │       ├── no_fall/                       # Imágenes sin caída
+│   │       └── scraping_log.csv               # Log de cada imagen: query, url, hash, timestamp
+│   ├── processed/                             # Dataset listo para entrenamiento
+│   │   ├── train/
+│   │   │   ├── fall/
+│   │   │   └── no_fall/
+│   │   ├── valid/
+│   │   │   ├── fall/
+│   │   │   └── no_fall/
+│   │   ├── test/
+│   │   │   ├── fall/
+│   │   │   └── no_fall/
+│   │   └── dataset_labels.csv                 # Trazabilidad completa: imagen, label, split, query
+│   └── video/                                 # Videos subidos y frames con caídas
+│       ├── uploads/
+│       └── frames/
 │
-├── models/                           # Modelos entrenados
-│   ├── resnet18.pth                  # Modelo principal
-│   └── resnet18_quantized.pth        # Modelo cuantizado (menor tamaño, menor latencia)
+├── models/                                    # Modelos entrenados (NO subir a GitHub)
+│   ├── resnet18.pth                           # Modelo principal (float32)
+│   └── resnet18_quantized.pth                 # Modelo cuantizado (int8, menor latencia)
 │
 ├── notebooks/
-│   └── eda.ipynb                     # Análisis exploratorio del dataset
+│   └── eda.ipynb                              # Análisis exploratorio del dataset
 │
 ├── scripts/
-│   ├── download_dataset.py           # Descarga dataset desde Roboflow
-│   ├── convert_dataset.py            # Convierte formato folder → clasificación binaria
-│   └── compare_models.py             # Compara rendimiento de modelos
+│   ├── scrape_dataset.py                      # Scraper de imágenes
+│   ├── convert_dataset.py                     # Divide scraped → train/valid/test + genera CSV
+│   └── compare_models.py                      # Compara predicciones entre modelos
 │
 ├── src/
-│   ├── api/
-│   │   ├── app.py                    # Aplicación FastAPI principal
+│   │
+│   ├── api/                                   # API REST (FastAPI)
+│   │   ├── app.py                             # Aplicación principal, registro de routers e init DB
 │   │   └── routers/
-│   │       ├── predict.py            # Endpoint de predicción (online y batch)
-│   │       ├── gradcam.py            # Endpoint de explicabilidad GradCAM
-│   │       ├── predict_video.py      # Endpoint de predicción sobre video
-│   │       ├── dashboard.py          # Endpoint de métricas y estadísticas
-│   │       └── health.py             # Endpoint de health check
+│   │       ├── health.py                      # GET /health — healthcheck del contenedor
+│   │       ├── predict.py                     # POST /predict — clasificación de imagen
+│   │       ├── gradcam.py                     # POST /gradcam — heatmap de explicabilidad
+│   │       ├── predict_video.py               # POST /predict/video — análisis de video
+│   │       └── dashboard.py                   # GET /dashboard/stats — métricas operacionales
 │   │
-│   ├── core/
-│   │   ├── model.py                  # Definición ResNet18
-│   │   ├── train.py                  # Entrenamiento del modelo
-│   │   ├── evaluate.py               # Evaluación offline con métricas
-│   │   ├── classification.py         # Lógica de inferencia
-│   │   └── gradcam.py                # Implementación GradCAM
-│   │
-│   ├── core/preprocessing/
-│   │   └── transforms.py             # Transformaciones de imágenes (train y test)
+│   ├── core/                                  # Lógica ML
+│   │   ├── model.py                           # Definición ResNet18 con fine-tuning
+│   │   ├── train.py                           # Entrenamiento, validación por epoch y quantization
+│   │   ├── evaluate.py                        # Evaluación offline → genera metrics.json
+│   │   ├── classification.py                  # Clase ImageClassifier para inferencia
+│   │   ├── gradcam.py                         # Implementación GradCAM con hooks
+│   │   └── preprocessing/
+│   │       └── transforms.py                  # Transforms de train (augmentation) y test
 │   │
 │   ├── data/
-│   │   └── dataset.py                # Carga de datos con ImageFolder
+│   │   └── dataset.py                         # get_dataloaders() con ImageFolder
 │   │
-│   ├── db/
-│   │   ├── database.py               # Conexión SQLAlchemy a PostgreSQL
-│   │   └── models.py                 # Tabla de predicciones
+│   ├── db/                                    # Capa de base de datos
+│   │   ├── __init__.py
+│   │   ├── database.py                        # Conexión SQLAlchemy + get_db() + init_db()
+│   │   └── models.py                          # Tabla predictions en PostgreSQL
 │   │
 │   ├── settings/
-│   │   └── config.py                 # Configuración (modelo, dispositivo, DB)
+│   │   └── config.py                          # MODEL_TYPE, MODEL_PATH, DEVICE, DATABASE_URL
 │   │
 │   └── utils/
-│       ├── metrics.py                # Cálculo de métricas ML
-│       ├── logger.py                 # Logger centralizado
-│       ├── files.py                  # Manejo de archivos temporales
-│       └── video_detection.py        # Procesamiento de video frame a frame
+│       ├── metrics.py                         # compute_metrics() — accuracy, F1, precision, recall
+│       ├── logger.py                          # get_logger() — logger centralizado
+│       ├── files.py                           # Manejo de archivos temporales
+│       └── video_detection.py                 # detect_falls_from_video() — frame a frame
 │
 ├── app/
-│   └── streamlit_app.py              # Interfaz visual (Streamlit)
+│   └── streamlit_app.py                       # Interfaz visual — dashboard, imágenes y video
 │
-├── grafana/
+├── grafana/                                   # Configuración automática de Grafana
 │   └── provisioning/
 │       ├── datasources/
-│       │   └── postgres.yml          # Conexión automática a PostgreSQL
+│       │   └── postgres.yml                   # Conexión automática a PostgreSQL
 │       └── dashboards/
-│           ├── dashboard.yml         # Configuración del proveedor de dashboards
-│           └── fall_detector.json    # Dashboard pre-configurado
+│           ├── dashboard.yml                  # Proveedor de dashboards (directorio y refresh)
+│           └── fall_detector.json             # Dashboard pre-configurado con 7 paneles
 │
 ├── tests/
-│   ├── conftest.py
-│   ├── test_api.py
+│   ├── conftest.py                            # Fixtures — cliente de test con DB en memoria
+│   ├── test_api.py                            # Test de docs y health
 │   ├── api/
-│   │   └── test_routers.py
+│   │   └── test_routers.py                    # Tests de /predict, /gradcam, /dashboard/stats
 │   └── core/
-│       ├── test_model.py
-│       ├── test_inference.py
-│       ├── test_gradcam.py
-│       └── test_preprocessor.py
+│       ├── test_model.py                      # Tests del modelo ResNet18
+│       ├── test_inference.py                  # Tests de ImageClassifier
+│       ├── test_gradcam.py                    # Tests de GradCAM
+│       └── test_preprocessor.py              # Tests de transforms train vs test
 │
 ├── docs/
-│   └── endpoints.md                  # Documentación de endpoints
+│   ├── endpoints.md                           # Documentación de endpoints con ejemplos curl
+│   └── arquitectura.md                        # Explicación técnica de cada archivo del proyecto
 │
-├── Dockerfile
-├── Dockerfile.streamlit
-├── docker-compose.yml
-├── requirements.txt
-├── dev-requirements.txt
-├── .env                              # Variables de entorno (NO subir a GitHub)
-└── .gitignore
+├── Dockerfile                                 # Imagen de la API FastAPI
+├── Dockerfile.streamlit                       # Imagen de Streamlit
+├── docker-compose.yml                         # Orquestación: FastAPI + Streamlit + PostgreSQL + Grafana
+├── requirements.txt                           # Dependencias de producción
+├── metrics.json                               # Métricas del modelo (generado por evaluate.py)
+├── .env                                       # Variables de entorno (NO subir a GitHub)
+├── .gitignore
+└── README.md
 ```
 
 ---
@@ -108,7 +121,32 @@ Obligatorio_prueba/
 
 Clasificación binaria: dada una imagen o un video, el sistema determina si la persona está **caída** (`fall`) o **no caída** (`no_fall`).
 
-El dataset fue obtenido desde Roboflow en formato de detección de objetos y convertido a un problema de clasificación binaria mediante `convert_dataset.py`, donde cada imagen queda asignada a una de las dos clases según las anotaciones originales.
+El dataset fue construido mediante scraping de imágenes desde DuckDuckGo usando queries específicos por clase. La etiqueta se asigna por **Weak Supervision**: la heurística es el término de búsqueda usado para descargar cada imagen. Todo el proceso queda registrado en `scraping_log.csv` y `dataset_labels.csv` para trazabilidad completa.
+
+---
+
+## Dataset
+
+| Fuente | Método de etiquetado | Clases |
+|---|---|---|
+| DuckDuckGo (scraping) | Weak Supervision por query | `fall` / `no_fall` |
+
+### Queries utilizados
+
+| Clase | Queries |
+|---|---|
+| `fall` | `person fallen floor indoors`, `elderly person fall ground`, `person collapsed floor`, `man fallen street`, `person lying floor accident`, `person fell down stairs` |
+| `no_fall` | `person standing indoors`, `person walking street`, `person sitting chair`, `elderly person walking cane`, `person upright room`, `people standing office` |
+
+### División del dataset
+
+| Split | Proporción |
+|---|---|
+| train | 70% |
+| valid | 15% |
+| test | 15% |
+
+La división es aleatoria con semilla fija (`42`) para garantizar reproducibilidad.
 
 ---
 
@@ -116,8 +154,8 @@ El dataset fue obtenido desde Roboflow en formato de detección de objetos y con
 
 | Modelo | Descripción |
 |---|---|
-| `resnet18.pth` | ResNet18 con fine-tuning completo sobre todas las capas |
-| `resnet18_quantized.pth` | Versión cuantizada (dynamic quantization sobre capas Linear) — menor tamaño y latencia |
+| `resnet18.pth` | ResNet18 con fine-tuning completo desde pesos ImageNet |
+| `resnet18_quantized.pth` | Versión cuantizada (dynamic quantization int8) — menor tamaño y latencia |
 
 ### Selección de modelo en producción
 
@@ -136,21 +174,27 @@ Se controla mediante la variable de entorno `MODEL_TYPE` en el `docker-compose.y
 Pipeline de entrenamiento (offline)
 
 ┌─────────────────────┐
-│   Roboflow Dataset  │
-│ (imágenes + labels) │
+│   PEXELS y PIXABAY  │
+│ (búsqueda imágenes) │
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│ download_dataset.py │
-│  (descarga ds1/ds2) │
+│ scrape_dataset.py   │
+│ (descarga + log CSV)│
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│  convert_dataset.py │
-│ (folder → fall /    │
-│       no_fall)      │
+│  data/raw/scraped   │
+│  fall/ | no_fall/   │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ convert_dataset.py  │
+│ (split 70/15/15 +   │
+│  dataset_labels.csv)│
 └──────────┬──────────┘
            │
            ▼
@@ -162,39 +206,68 @@ Pipeline de entrenamiento (offline)
            ▼
 ┌─────────────────────┐
 │      train.py       │
-│  (ResNet18 fine-    │
-│      tuning)        │
+│ (ResNet18 fine-     │
+│  tuning + best ckpt │
+│  + quantization)    │
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
 │  models/*.pth       │
 │ (normal/quantized)  │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│    evaluate.py      │
+│ (métricas offline → │
+│   metrics.json)     │
 └─────────────────────┘
 
 
 Pipeline de producción (online)
 
-┌──────────────────────────┐
-│   docker-compose up      │
-│ FastAPI + Streamlit      │
-│ + PostgreSQL + Grafana   │
-└──────────┬───────────────┘
+┌──────────────────────────────────────┐
+│         docker-compose up            │
+│  FastAPI + Streamlit                 │
+│  + PostgreSQL + Grafana              │
+└──────────┬───────────────────────────┘
            │
            ▼
 ┌──────────────────────────┐
 │       FastAPI API        │
 │     (src/api/app.py)     │
-└────┬──────────┬──────────┘
-     │          │          │
-     ▼          ▼          ▼
-/predict   /gradcam   /predict/video
-     │
-     ▼
-PostgreSQL (predicciones)
-     │
-     ▼
-Grafana (dashboard operacional)
+└───┬──────┬──────┬────────┘
+    │      │      │
+    ▼      ▼      ▼
+/predict /gradcam /predict/video
+    │
+    ▼
+PostgreSQL
+(tabla predictions)
+    │
+    ▼
+Grafana
+(dashboard operacional)
+
+
+Interfaz visual
+
+┌──────────────────────────┐
+│      Streamlit App       │
+│   (app/streamlit_app.py) │
+└──────────┬───────────────┘
+           │ HTTP requests
+           ▼
+     FastAPI API
+           │
+           ▼
+┌──────────────────────────┐
+│    Resultados mostrados  │
+│ ✅ métricas del modelo   │
+│ ✅ predicción + GradCAM  │
+│ ✅ análisis de video     │
+└──────────────────────────┘
 ```
 
 ---
@@ -202,10 +275,10 @@ Grafana (dashboard operacional)
 ## Desafíos de producción resueltos
 
 ### Data Leakage
-Se evitó mediante separación estricta de los conjuntos `train`, `valid` y `test` desde el paso de conversión del dataset. Ninguna imagen del conjunto de test es vista durante el entrenamiento.
+Se evitó mediante separación estricta de los conjuntos `train`, `valid` y `test` en `convert_dataset.py`. La división se hace con semilla fija antes de cualquier entrenamiento, garantizando que ninguna imagen del test sea vista por el modelo.
 
 ### Training-Serving Skew
-Se unificaron las transformaciones de inferencia en un módulo compartido (`transforms.py`). El endpoint de la API usa exactamente las mismas transformaciones (`get_test_transforms()`) que se aplican al conjunto de test durante la evaluación offline.
+Se unificaron las transformaciones en un módulo compartido (`transforms.py`). La API usa exactamente `get_test_transforms()` — el mismo preprocesamiento que se aplica al conjunto de test durante la evaluación offline.
 
 ---
 
@@ -213,9 +286,10 @@ Se unificaron las transformaciones de inferencia en un módulo compartido (`tran
 
 | Electivo | Implementación |
 |---|---|
-| ✅ Explicabilidad | GradCAM sobre la última capa convolucional de ResNet18 |
-| ✅ Visualización | Streamlit con predicción de imágenes, video y dashboard |
-| ✅ Optimización de modelos | Quantization dinámica (qint8) + Data Augmentation (flip, rotación) |
+| ✅ Scraper de datos | `scrape_dataset.py` — DuckDuckGo, Weak Supervision, log CSV |
+| ✅ Explicabilidad | GradCAM sobre `layer4[-1]` de ResNet18 |
+| ✅ Visualización | Streamlit con dashboard, predicción de imágenes y video |
+| ✅ Optimización de modelos | Data Augmentation (flip, rotación) + Quantization dinámica (int8) |
 
 ---
 
@@ -223,10 +297,11 @@ Se unificaron las transformaciones de inferencia en un módulo compartido (`tran
 
 ### 1. Configurar variables de entorno
 
-Crear un archivo `.env` en la raíz del proyecto:
+Crear `.env` en la raíz:
 
 ```env
-ROBOFLOW_API_KEY=tu_api_key_aqui
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/falldetector
+MODEL_TYPE=normal
 ```
 
 ### 2. Instalar dependencias
@@ -235,34 +310,45 @@ ROBOFLOW_API_KEY=tu_api_key_aqui
 pip install -r requirements.txt
 ```
 
-### 3. Descargar y preparar el dataset
+### 3. Scrapear imágenes
 
 ```bash
-python scripts/download_dataset.py
+python scripts/scrape_dataset.py
+```
+
+Descarga imágenes desde PEXELS y PIXABAY a `data/raw/scraped/` organizadas por clase (`fall/` y `no_fall/`). Genera `scraping_log.csv` con cada imagen, su query de origen, URL y hash MD5.
+
+> Objetivo: ~180 imágenes por clase (30 imágenes × 6 queries).
+
+### 4. Convertir y dividir el dataset
+
+```bash
 python scripts/convert_dataset.py
 ```
 
-### 4. Entrenar el modelo
+Divide las imágenes en `train/valid/test` (70/15/15) con semilla fija y genera `data/processed/dataset_labels.csv` con la trazabilidad completa de cada imagen.
+
+### 5. Entrenar el modelo
 
 ```bash
 python -m src.core.train
 ```
 
-### 5. Evaluar el modelo
+Entrena ResNet18 con fine-tuning desde pesos ImageNet. Guarda el mejor checkpoint por accuracy de validación y genera automáticamente el modelo cuantizado.
+
+### 6. Evaluar el modelo
 
 ```bash
 python -m src.core.evaluate
 ```
 
-Genera `metrics.json` con accuracy, precision, recall, F1 y matriz de confusión.
+Genera `metrics.json` con accuracy, precision, recall, F1 y matriz de confusión sobre el conjunto de test.
 
-### 6. Levantar en producción con Docker
+### 7. Levantar en producción con Docker
 
 ```bash
 docker-compose up --build
 ```
-
-Servicios disponibles:
 
 | Servicio | URL |
 |---|---|
@@ -270,13 +356,13 @@ Servicios disponibles:
 | Streamlit | http://localhost:8501 |
 | Grafana | http://localhost:3000 (admin / admin) |
 
-### 7. Detener los servicios
+### 8. Detener los servicios
 
 ```bash
 docker-compose down -v
 ```
 
-### 8. Correr tests
+### 9. Correr tests
 
 ```bash
 pytest tests/
