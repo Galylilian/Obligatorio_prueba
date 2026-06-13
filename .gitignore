@@ -164,4 +164,4 @@ cython_debug/
 /medical-10
 /data
 /data/raw
-
+data/raw/scraped/

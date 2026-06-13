@@ -1,130 +1,187 @@
+"""
+scripts/convert_dataset.py
+
+Convierte las imágenes scrapeadas a formato de clasificación binaria:
+    data/processed/train/fall/
+    data/processed/train/no_fall/
+    data/processed/valid/fall/
+    data/processed/valid/no_fall/
+    data/processed/test/fall/
+    data/processed/test/no_fall/
+
+Fuente única:
+    data/raw/scraped/fall/     → imágenes de caídas
+    data/raw/scraped/no_fall/  → imágenes sin caída
+
+Las imágenes se dividen aleatoriamente en 70% train / 15% valid / 15% test.
+La semilla es fija (42) para garantizar reproducibilidad.
+
+Al finalizar genera:
+    data/processed/dataset_labels.csv  → trazabilidad completa de cada imagen
+    (filename, label, source, query, split, timestamp)
+
+Correr primero:
+    python scripts/scrape_dataset.py
+"""
+
 import os
+import csv
 import shutil
-import zipfile
+import random
+import pathlib
+from datetime import datetime
 
 # =============================
 # PATHS
 # =============================
-BASE_PATH = "data/raw"
-OUTPUT_PATH = "data/processed"
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCRAPED_PATH = ROOT / "data" / "raw" / "scraped"
+SCRAPING_LOG = SCRAPED_PATH / "scraping_log.csv"
+OUTPUT_PATH = ROOT / "data" / "processed"
+LABELS_CSV = OUTPUT_PATH / "dataset_labels.csv"
 
-splits = ["train", "valid", "test"]
-datasets = ["ds1", "ds2"]
+SPLITS = ["train", "valid", "test"]
+LABELS = ["fall", "no_fall"]
 
-# =============================
-# EXTRAER ZIP (SI EXISTEN)
-# =============================
-def extract_zip_if_needed(dataset_path):
-    for file in os.listdir(dataset_path):
-        if file.endswith(".zip"):
-            zip_path = os.path.join(dataset_path, file)
-            print(f"📦 Intentando extraer {zip_path}")
+# División del dataset — suma 1.0
+SPLIT_RATIOS = {"train": 0.70, "valid": 0.15, "test": 0.15}
 
-            try:
-                with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall(dataset_path)
-
-                os.remove(zip_path)
-                print(f"✅ Extraído {file}")
-
-            except zipfile.BadZipFile:
-                print(f"❌ {file} no es un zip válido → eliminando")
-                os.remove(zip_path)
+# Semilla fija para reproducibilidad del split
+RANDOM_SEED = 42
 
 
 # =============================
-# ARREGLAR ESTRUCTURA ANIDADA
+# UTILIDADES
 # =============================
-def fix_nested_structure(dataset_path):
-    contents = os.listdir(dataset_path)
 
-    # si hay una sola carpeta → probablemente está anidado
-    if len(contents) == 1:
-        inner_path = os.path.join(dataset_path, contents[0])
+def is_image(filename: str) -> bool:
+    return filename.lower().endswith((".jpg", ".jpeg", ".png"))
 
-        if os.path.isdir(inner_path):
-            print(f"📂 Corrigiendo estructura anidada en {dataset_path}")
 
-            for item in os.listdir(inner_path):
-                src = os.path.join(inner_path, item)
-                dst = os.path.join(dataset_path, item)
-                shutil.move(src, dst)
+def split_list(items: list, ratios: dict, seed: int) -> dict:
+    """
+    Divide una lista en train/valid/test según los ratios dados.
+    La semilla garantiza que el mismo dataset siempre produce el mismo split.
+    """
+    random.seed(seed)
+    shuffled = items.copy()
+    random.shuffle(shuffled)
 
-            os.rmdir(inner_path)
+    n = len(shuffled)
+    n_train = int(n * ratios["train"])
+    n_valid = int(n * ratios["valid"])
+
+    return {
+        "train": shuffled[:n_train],
+        "valid": shuffled[n_train:n_train + n_valid],
+        "test":  shuffled[n_train + n_valid:],
+    }
 
 
 # =============================
-# LIMPIAR OUTPUT
+# VALIDAR ENTRADA
 # =============================
-if os.path.exists(OUTPUT_PATH):
+if not SCRAPED_PATH.exists():
+    print("❌ No existe data/raw/scraped/")
+    print("   Corré primero: python scripts/scrape_dataset.py")
+    exit(1)
+
+# =============================
+# LIMPIAR Y CREAR OUTPUT
+# =============================
+if OUTPUT_PATH.exists():
     shutil.rmtree(OUTPUT_PATH)
 
-# =============================
-# PREPARAR DATASETS
-# =============================
-for dataset in datasets:
-    dataset_path = os.path.join(BASE_PATH, dataset)
+for split in SPLITS:
+    for label in LABELS:
+        (OUTPUT_PATH / split / label).mkdir(parents=True, exist_ok=True)
 
-    if not os.path.exists(dataset_path):
-        print(f"⚠️ Dataset no encontrado: {dataset_path}")
+print("\n" + "=" * 60)
+print("CONVERT DATASET — Scraped images → train/valid/test")
+print("=" * 60)
+
+# =============================
+# LEER LOG DE SCRAPING
+# Para recuperar la query de origen de cada imagen
+# =============================
+scraping_queries = {}
+if SCRAPING_LOG.exists():
+    with open(SCRAPING_LOG, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            scraping_queries[row["filename"]] = row.get("query", "")
+
+# =============================
+# PROCESAR IMÁGENES POR CLASE
+# =============================
+label_rows = []
+
+for label in LABELS:
+
+    src_dir = SCRAPED_PATH / label
+
+    if not src_dir.exists():
+        print(f"\n⚠️  No existe {src_dir} — saltando")
         continue
 
-    extract_zip_if_needed(dataset_path)
-    fix_nested_structure(dataset_path)
+    files = [f for f in os.listdir(src_dir) if is_image(f)]
 
+    if not files:
+        print(f"\n⚠️  {label}: sin imágenes")
+        continue
+
+    print(f"\n📁 {label.upper()}: {len(files)} imágenes → split {SPLIT_RATIOS}")
+
+    splits_assigned = split_list(files, SPLIT_RATIOS, RANDOM_SEED)
+
+    for split, split_files in splits_assigned.items():
+
+        dest_dir = OUTPUT_PATH / split / label
+        print(f"  [{split}]: {len(split_files)} imágenes")
+
+        for file in split_files:
+
+            src = src_dir / file
+            dst = dest_dir / file
+            shutil.copy(str(src), str(dst))
+
+            label_rows.append({
+                "filename": file,
+                "label": label,
+                "source": "duckduckgo",
+                "query": scraping_queries.get(file, ""),
+                "split": split,
+                "timestamp": datetime.now().isoformat(),
+            })
 
 # =============================
-# PROCESAMIENTO (CLASIFICACIÓN CORRECTO)
+# GENERAR CSV DE TRAZABILIDAD
 # =============================
-for split in splits:
+print("\n" + "=" * 60)
+print("Generando dataset_labels.csv")
+print("=" * 60)
 
-    print(f"\n📂 Procesando {split}")
+with open(LABELS_CSV, "w", newline="", encoding="utf-8") as f:
+    fieldnames = ["filename", "label", "source", "query", "split", "timestamp"]
+    writer = csv.DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(label_rows)
 
-    fall_dir_out = os.path.join(OUTPUT_PATH, split, "fall")
-    no_fall_dir_out = os.path.join(OUTPUT_PATH, split, "no_fall")
+print(f"  ✅ CSV guardado en: {LABELS_CSV}")
+print(f"  📊 Total registradas: {len(label_rows)} imágenes")
 
-    os.makedirs(fall_dir_out, exist_ok=True)
-    os.makedirs(no_fall_dir_out, exist_ok=True)
+# =============================
+# RESUMEN FINAL
+# =============================
+print("\n" + "=" * 60)
+print("RESUMEN FINAL")
+print("=" * 60)
 
-    for dataset in datasets:
+for split in SPLITS:
+    fall_count    = len([f for f in os.listdir(OUTPUT_PATH / split / "fall")    if is_image(f)])
+    no_fall_count = len([f for f in os.listdir(OUTPUT_PATH / split / "no_fall") if is_image(f)])
+    total = fall_count + no_fall_count
+    print(f"  [{split}] fall: {fall_count} | no_fall: {no_fall_count} | total: {total}")
 
-        split_path = os.path.join(BASE_PATH, dataset, split)
-
-        if not os.path.exists(split_path):
-            print(f"⚠️ No existe split: {split_path}")
-            continue
-
-        labels = os.listdir(split_path)
-
-        print(f"🔍 Labels detectados en {split_path}: {labels}")
-
-        for label in labels:
-
-            src_dir = os.path.join(split_path, label)
-
-            if not os.path.isdir(src_dir):
-                continue
-
-            # 🔥 CORRECCIÓN CLAVE
-            if label.lower() == "fall":
-                dest_dir = fall_dir_out
-            else:
-                dest_dir = no_fall_dir_out
-
-            files = os.listdir(src_dir)
-
-            print(f"  📁 {label}: {len(files)} archivos")
-
-            for file in files:
-
-                if not file.lower().endswith((".jpg", ".jpeg", ".png")):
-                    continue
-
-                src = os.path.join(src_dir, file)
-                dst = os.path.join(dest_dir, f"{dataset}_{file}")
-
-                shutil.copy(src, dst)
-
-    print(f"✅ {split} listo")
-
-print("\n✅ Dataset fusionado correctamente en data/processed")
+print("\n✅ Dataset listo en data/processed/")
+print(f"✅ Trazabilidad guardada en {LABELS_CSV}")
