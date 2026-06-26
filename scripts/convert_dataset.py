@@ -1,187 +1,134 @@
 """
 scripts/convert_dataset.py
 
-Convierte las imágenes scrapeadas a formato de clasificación binaria:
+PASO 3: Arma el dataset final a partir de las carpetas etiquetadas.
+
+Lee las imagenes desde:
+    data/raw/fall/      (imagenes de caidas)
+    data/raw/no_fall/   (imagenes de no caidas)
+
+Y las divide en:
     data/processed/train/fall/
     data/processed/train/no_fall/
-    data/processed/valid/fall/
-    data/processed/valid/no_fall/
-    data/processed/test/fall/
-    data/processed/test/no_fall/
+    data/processed/valid/...
+    data/processed/test/...
 
-Fuente única:
-    data/raw/scraped/fall/     → imágenes de caídas
-    data/raw/scraped/no_fall/  → imágenes sin caída
+Division: 70% train / 15% valid / 15% test, estratificada por clase.
+Semilla fija (42) para reproducibilidad.
 
-Las imágenes se dividen aleatoriamente en 70% train / 15% valid / 15% test.
-La semilla es fija (42) para garantizar reproducibilidad.
+Genera data/processed/dataset_labels.csv con trazabilidad completa.
 
-Al finalizar genera:
-    data/processed/dataset_labels.csv  → trazabilidad completa de cada imagen
-    (filename, label, source, query, split, timestamp)
-
-Correr primero:
-    python scripts/scrape_dataset.py
+Uso:
+    python scripts/convert_dataset.py
 """
 
-import os
 import csv
-import shutil
-import random
 import pathlib
+import random
+import shutil
+from collections import defaultdict
 from datetime import datetime
 
-# =============================
-# PATHS
-# =============================
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCRAPED_PATH = ROOT / "data" / "raw" / "scraped"
-SCRAPING_LOG = SCRAPED_PATH / "scraping_log.csv"
-OUTPUT_PATH = ROOT / "data" / "processed"
-LABELS_CSV = OUTPUT_PATH / "dataset_labels.csv"
+ROOT         = pathlib.Path(__file__).resolve().parents[1]
+RAW_DIR      = ROOT / "data" / "raw"
+FALL_DIR     = RAW_DIR / "fall"
+NO_FALL_DIR  = RAW_DIR / "no_fall"
+OUTPUT       = ROOT / "data" / "processed"
+LABELS_OUT   = OUTPUT / "dataset_labels.csv"
 
-SPLITS = ["train", "valid", "test"]
-LABELS = ["fall", "no_fall"]
-
-# División del dataset — suma 1.0
+SPLITS       = ["train", "valid", "test"]
+LABELS       = ["fall", "no_fall"]
 SPLIT_RATIOS = {"train": 0.70, "valid": 0.15, "test": 0.15}
-
-# Semilla fija para reproducibilidad del split
-RANDOM_SEED = 42
-
-
-# =============================
-# UTILIDADES
-# =============================
-
-def is_image(filename: str) -> bool:
-    return filename.lower().endswith((".jpg", ".jpeg", ".png"))
+RANDOM_SEED  = 42
+IMG_EXTS     = {".jpg", ".jpeg", ".png"}
 
 
 def split_list(items: list, ratios: dict, seed: int) -> dict:
-    """
-    Divide una lista en train/valid/test según los ratios dados.
-    La semilla garantiza que el mismo dataset siempre produce el mismo split.
-    """
-    random.seed(seed)
+    rng = random.Random(seed)
     shuffled = items.copy()
-    random.shuffle(shuffled)
-
+    rng.shuffle(shuffled)
     n = len(shuffled)
     n_train = int(n * ratios["train"])
-    n_valid = int(n * ratios["valid"])
-
+    n_valid  = int(n * ratios["valid"])
     return {
         "train": shuffled[:n_train],
-        "valid": shuffled[n_train:n_train + n_valid],
-        "test":  shuffled[n_train + n_valid:],
+        "valid": shuffled[n_train : n_train + n_valid],
+        "test":  shuffled[n_train + n_valid :],
     }
 
 
-# =============================
-# VALIDAR ENTRADA
-# =============================
-if not SCRAPED_PATH.exists():
-    print("❌ No existe data/raw/scraped/")
-    print("   Corré primero: python scripts/scrape_dataset.py")
-    exit(1)
+def collect_images(folder: pathlib.Path) -> list[pathlib.Path]:
+    if not folder.exists():
+        return []
+    return [f for f in folder.iterdir() if f.suffix.lower() in IMG_EXTS]
 
-# =============================
-# LIMPIAR Y CREAR OUTPUT
-# =============================
-if OUTPUT_PATH.exists():
-    shutil.rmtree(OUTPUT_PATH)
-
-for split in SPLITS:
-    for label in LABELS:
-        (OUTPUT_PATH / split / label).mkdir(parents=True, exist_ok=True)
 
 print("\n" + "=" * 60)
-print("CONVERT DATASET — Scraped images → train/valid/test")
+print("PASO 3: ARMADO DEL DATASET FINAL")
 print("=" * 60)
 
-# =============================
-# LEER LOG DE SCRAPING
-# Para recuperar la query de origen de cada imagen
-# =============================
-scraping_queries = {}
-if SCRAPING_LOG.exists():
-    with open(SCRAPING_LOG, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            scraping_queries[row["filename"]] = row.get("query", "")
+by_label: dict[str, list[pathlib.Path]] = {
+    "fall":    collect_images(FALL_DIR),
+    "no_fall": collect_images(NO_FALL_DIR),
+}
 
-# =============================
-# PROCESAR IMÁGENES POR CLASE
-# =============================
-label_rows = []
+print("\nImagenes encontradas:")
+for label in LABELS:
+    print(f"  {label}: {len(by_label[label])}")
+
+if not by_label["fall"]:
+    print(f"\nERROR: No hay imagenes en {FALL_DIR}")
+    print("  Coloca imagenes de caidas ahi o usa label_tool.py")
+    exit(1)
+
+if not by_label["no_fall"]:
+    print(f"\nERROR: No hay imagenes en {NO_FALL_DIR}")
+    print("  Coloca imagenes de no caidas ahi o usa label_tool.py")
+    exit(1)
+
+# Limpiar y recrear estructura de salida
+if OUTPUT.exists():
+    shutil.rmtree(OUTPUT)
+for split in SPLITS:
+    for label in LABELS:
+        (OUTPUT / split / label).mkdir(parents=True, exist_ok=True)
+
+label_rows: list[dict] = []
 
 for label in LABELS:
+    files = by_label[label]
+    splits = split_list(files, SPLIT_RATIOS, RANDOM_SEED)
 
-    src_dir = SCRAPED_PATH / label
+    print(f"\n  {label}:")
+    for split, split_files in splits.items():
+        dest_dir = OUTPUT / split / label
+        print(f"    [{split}]: {len(split_files)}")
 
-    if not src_dir.exists():
-        print(f"\n⚠️  No existe {src_dir} — saltando")
-        continue
-
-    files = [f for f in os.listdir(src_dir) if is_image(f)]
-
-    if not files:
-        print(f"\n⚠️  {label}: sin imágenes")
-        continue
-
-    print(f"\n📁 {label.upper()}: {len(files)} imágenes → split {SPLIT_RATIOS}")
-
-    splits_assigned = split_list(files, SPLIT_RATIOS, RANDOM_SEED)
-
-    for split, split_files in splits_assigned.items():
-
-        dest_dir = OUTPUT_PATH / split / label
-        print(f"  [{split}]: {len(split_files)} imágenes")
-
-        for file in split_files:
-
-            src = src_dir / file
-            dst = dest_dir / file
+        for src in split_files:
+            dst = dest_dir / src.name
             shutil.copy(str(src), str(dst))
 
             label_rows.append({
-                "filename": file,
-                "label": label,
-                "source": "duckduckgo",
-                "query": scraping_queries.get(file, ""),
-                "split": split,
+                "filename":  src.name,
+                "label":     label,
+                "source":    str(src.parent.name),
+                "split":     split,
                 "timestamp": datetime.now().isoformat(),
             })
 
-# =============================
-# GENERAR CSV DE TRAZABILIDAD
-# =============================
-print("\n" + "=" * 60)
-print("Generando dataset_labels.csv")
-print("=" * 60)
-
-with open(LABELS_CSV, "w", newline="", encoding="utf-8") as f:
-    fieldnames = ["filename", "label", "source", "query", "split", "timestamp"]
-    writer = csv.DictWriter(f, fieldnames=fieldnames)
+with open(LABELS_OUT, "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["filename", "label", "source", "split", "timestamp"])
     writer.writeheader()
     writer.writerows(label_rows)
 
-print(f"  ✅ CSV guardado en: {LABELS_CSV}")
-print(f"  📊 Total registradas: {len(label_rows)} imágenes")
-
-# =============================
-# RESUMEN FINAL
-# =============================
 print("\n" + "=" * 60)
 print("RESUMEN FINAL")
 print("=" * 60)
-
 for split in SPLITS:
-    fall_count    = len([f for f in os.listdir(OUTPUT_PATH / split / "fall")    if is_image(f)])
-    no_fall_count = len([f for f in os.listdir(OUTPUT_PATH / split / "no_fall") if is_image(f)])
-    total = fall_count + no_fall_count
-    print(f"  [{split}] fall: {fall_count} | no_fall: {no_fall_count} | total: {total}")
+    fall    = len(list((OUTPUT / split / "fall").glob("*")))
+    no_fall = len(list((OUTPUT / split / "no_fall").glob("*")))
+    print(f"  [{split}] fall: {fall} | no_fall: {no_fall} | total: {fall + no_fall}")
 
-print("\n✅ Dataset listo en data/processed/")
-print(f"✅ Trazabilidad guardada en {LABELS_CSV}")
+print(f"\nDataset listo en      : {OUTPUT}")
+print(f"Trazabilidad en       : {LABELS_OUT}")
+print(f"Total de imagenes     : {len(label_rows)}")

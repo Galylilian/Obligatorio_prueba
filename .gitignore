@@ -123,15 +123,11 @@ celerybeat.pid
 # Los .gitkeep permiten que las carpetas aparezcan en GitHub
 # =============================
 
-# raw — ignorar todo el contenido
+# raw — ignorar imágenes y CSVs, mantener estructura de carpetas
 data/raw/**
 !data/raw/
+!data/raw/*/
 !data/raw/**/.gitkeep
-
-# scraped — ignorar imágenes y CSVs pero mantener carpetas
-data/raw/scraped/**
-!data/raw/scraped/
-!data/raw/scraped/**/.gitkeep
 
 # processed — ignorar imágenes pero mantener carpetas y el CSV de trazabilidad
 data/processed/**
