@@ -1,0 +1,16 @@
+# Busquedas genericas de personas (sin etiqueta) para scrape_dataset.py
+# Mezcla deliberada de candidatos a fall y no_fall:
+# el etiquetado lo hace un humano en label_tool.py
+person standing indoors
+person walking street
+person sitting chair
+elderly person walking cane
+person upright room
+people standing office
+person jogging park
+people waiting bus stop
+cctv people corridor
+emergency responder fallen patient
+man collapsed office floor
+patient fallen hospital corridor
+person lying on ground

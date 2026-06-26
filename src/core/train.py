@@ -38,7 +38,19 @@ logger.info("Modelo ResNet18 cargado con pesos ImageNet (fine-tuning)")
 # =============================
 # ENTRENAMIENTO
 # =============================
-criterion = torch.nn.CrossEntropyLoss()
+
+# Class weights inversamente proporcionales a la frecuencia de cada clase.
+# Fórmula: n_samples / (n_classes * count_per_class)
+# Esto hace que el loss de la clase minoritaria pese más durante el backprop.
+_targets = torch.tensor(train_loader.dataset.targets)
+_counts = torch.bincount(_targets)
+_class_weights = (_targets.size(0) / (len(_counts) * _counts.float())).to(device)
+
+classes = train_loader.dataset.classes
+for cls, w in zip(classes, _class_weights):
+    logger.info(f"Class weight '{cls}': {w:.4f}")
+
+criterion = torch.nn.CrossEntropyLoss(weight=_class_weights)
 
 # Adam con todas las capas — fine-tuning completo
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
