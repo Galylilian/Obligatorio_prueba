@@ -359,11 +359,20 @@ pytest tests/
 
 ## Métricas del modelo
 
-| Métrica | Valor |
-|---------|-------|
-| Accuracy | 93.97% |
-| Precision | 89.29% |
-| Recall | 98.04% |
-| F1 Score | 93.46% |
+| Métrica   | Valor  |
+|-----------|--------|
+| Accuracy  | 88.00% |
+| Precision | 94.12% |
+| Recall    | 88.89% |
+| F1 Score  | 91.43% |
 
-Evaluado sobre el conjunto de test con el modelo `resnet18.pth`.
+Evaluado sobre el conjunto de test (25 imágenes) con el modelo `resnet18.pth`.
+
+Matriz de confusión (fall=0, no_fall=1):
+
+| Real / Pred. | Pred. fall | Pred. no_fall |
+| --- | --- | --- |
+| Real fall | 6 | 1 |
+| Real no_fall | 2 | 16 |
+
+La precision es alta (94%) — cuando el modelo dice "fall", casi siempre acierta. El recall del 89% implica que se pierden 2 caídas reales de 9. Para producción, ese es el error más crítico y mejora con más datos de entrenamiento en la clase `fall`.
