@@ -81,9 +81,10 @@ def get_stats(db: Session = Depends(get_db)):
         "analytics_enabled": True,
 
         # ✅ estructura que espera Streamlit para métricas del modelo
+        # metrics.json se genera en evaluate.py evaluando sobre test_loader
         "model": {
             "splits": {
-                "valid": model_metrics
+                "test": model_metrics
             }
         }
     }

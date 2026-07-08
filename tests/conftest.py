@@ -7,7 +7,7 @@ from src.api.app import app
 from src.db.database import get_db, Base
 
 # =============================
-# DB EN MEMORIA PARA TESTS ✅
+# DB SQLITE (ARCHIVO LOCAL) PARA TESTS ✅
 # =============================
 SQLALCHEMY_TEST_URL = "sqlite:///./test.db"
 

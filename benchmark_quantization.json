@@ -1,0 +1,28 @@
+{
+  "normal": {
+    "mean_ms": 25.489000000205756,
+    "stdev_ms": 1.8947965628624737,
+    "p95_ms": 28.343199999653734,
+    "size_mb": 42.71296215057373,
+    "n_samples": 23
+  },
+  "quantized_linear": {
+    "mean_ms": 26.583443478280653,
+    "stdev_ms": 1.628801643683749,
+    "p95_ms": 29.382900000200607,
+    "size_mb": 42.712063789367676,
+    "n_samples": 23
+  },
+  "quantized_linear_conv2d": {
+    "mean_ms": 28.656108695545498,
+    "stdev_ms": 3.43905798517183,
+    "p95_ms": 34.4466000005923,
+    "size_mb": 42.710211753845215,
+    "n_samples": 23
+  },
+  "speedup_linear": 0.9588298830071024,
+  "size_reduction_pct_linear": 0.0021032519423203055,
+  "speedup_linear_conv2d": 0.8894787589973073,
+  "size_reduction_pct_linear_conv2d": 0.006439255415768841,
+  "note": "PyTorch (torch.ao.quantization.quantize_dynamic) no soporta Conv2d en su mapping por defecto: solo Linear/LSTM/GRU/RNN. Por eso la variante Linear+Conv2d da resultados equivalentes a la variante solo-Linear (las capas Conv2d quedan sin cuantizar)."
+}

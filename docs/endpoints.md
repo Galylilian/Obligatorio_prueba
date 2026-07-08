@@ -226,7 +226,7 @@ curl http://localhost:8080/dashboard/stats
   "analytics_enabled": true,
   "model": {
     "splits": {
-      "valid": {
+      "test": {
         "accuracy": 0.9397,
         "precision": 0.8929,
         "recall": 0.9804,
@@ -245,7 +245,7 @@ curl http://localhost:8080/dashboard/stats
 | `falls_today` | `int` | Caídas detectadas hoy |
 | `falls_week` | `int` | Caídas detectadas en los últimos 7 días |
 | `label_distribution` | `object` | Distribución de clases en el historial |
-| `model.splits.valid` | `object` | Métricas del modelo evaluadas sobre el test set |
+| `model.splits.test` | `object` | Métricas del modelo evaluadas sobre el test set |
 
 **Notas**
 - Los contadores (`falls_today`, `classified_today`, etc.) se calculan en tiempo real desde PostgreSQL.

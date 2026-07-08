@@ -10,7 +10,7 @@ from src.settings.config import MODEL_PATH, DEVICE
 # =============================
 # DATA
 # =============================
-_, test_loader = get_dataloaders()
+_, _, test_loader = get_dataloaders()
 
 # =============================
 # MODELO
