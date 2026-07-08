@@ -1,8 +1,13 @@
 # ============================
+# PyTorch CPU-only (despliegue en EC2 sin GPU)
+# ============================
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+
+# ============================
 # Core ML
 # ============================
-torch>=1.12.0
-torchvision>=0.13.0
 scikit-learn>=1.0.0
 
 # ============================
@@ -11,18 +16,17 @@ scikit-learn>=1.0.0
 fastapi>=0.95.0
 uvicorn[standard]>=0.22.0
 pydantic>=2.0.0
-pydantic-settings>=2.0.0
 
 # ============================
 # Image processing
 # ============================
 pillow>=9.0.0
-opencv-python>=4.5.0
+opencv-python-headless>=4.5.0
 
 # ============================
 # Dataset (Scraping)
 # ============================
-beautifulsoup4>=4.10.0
+tqdm>=4.64.0
 
 # ============================
 # UI (Streamlit)
