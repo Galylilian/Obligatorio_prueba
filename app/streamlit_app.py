@@ -35,19 +35,19 @@ if stats:
     enabled = stats.get("analytics_enabled", False)
     c4.metric("Analytics", "ON" if enabled else "OFF")
 
-    # métricas modelo
+    # métricas modelo (evaluadas sobre el test set)
     model = stats.get("model", {})
-    valid = model.get("splits", {}).get("valid", {})
+    test = model.get("splits", {}).get("test", {})
 
-    if valid:
+    if test:
         st.subheader("📈 Métricas del modelo")
 
         m1, m2, m3, m4 = st.columns(4)
 
-        m1.metric("Accuracy", f"{valid.get('accuracy', 0)*100:.1f}%")
-        m2.metric("F1", f"{valid.get('f1_score', 0)*100:.1f}%")
-        m3.metric("Precision", f"{valid.get('precision', 0)*100:.1f}%")
-        m4.metric("Recall", f"{valid.get('recall', 0)*100:.1f}%")
+        m1.metric("Accuracy", f"{test.get('accuracy', 0)*100:.1f}%")
+        m2.metric("F1", f"{test.get('f1_score', 0)*100:.1f}%")
+        m3.metric("Precision", f"{test.get('precision', 0)*100:.1f}%")
+        m4.metric("Recall", f"{test.get('recall', 0)*100:.1f}%")
 
 # =============================
 # INPUT DE IMÁGENES

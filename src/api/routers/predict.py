@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, Depends
+from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 from PIL import Image
 
@@ -56,4 +56,53 @@ async def predict(file: UploadFile, db: Session = Depends(get_db)):
 
         return {
             "error": "Error procesando la imagen"
+        }
+
+
+@router.post("/predict/batch")
+async def predict_batch(
+    files: list[UploadFile] = File(..., description="Imágenes para clasificar"),
+    db: Session = Depends(get_db),
+):
+    logger.info(f"Batch request recibido: {len(files)} archivos")
+
+    try:
+        filenames = [file.filename for file in files]
+        images = [Image.open(file.file).convert("RGB") for file in files]
+
+        logger.info("Imágenes cargadas correctamente")
+
+        prediction = classifier.predict(images)
+
+        results = []
+        for filename, pred in zip(filenames, prediction["images"]):
+            record = Prediction(
+                filename=filename,
+                label=pred["label"],
+                confidence=pred["confidence"],
+                model_type=MODEL_TYPE,
+            )
+            db.add(record)
+
+            results.append({
+                "filename": filename,
+                "label": pred["label"],
+                "confidence": pred["confidence"],
+            })
+
+        db.commit()
+
+        logger.info(f"Batch procesado: {len(results)} imágenes")
+
+        return {
+            "results": results,
+            "total": len(results),
+            "inference_time": prediction["inference_time"],
+        }
+
+    except Exception as e:
+        logger.error(f"Error en predicción batch: {str(e)}")
+
+        return {
+            "error": "Error procesando el batch de imágenes"
         }

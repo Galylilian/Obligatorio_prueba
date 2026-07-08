@@ -24,7 +24,7 @@ logger.info(f"Usando dispositivo: {device}")
 # =============================
 # DATOS
 # =============================
-train_loader, test_loader = get_dataloaders()
+train_loader, valid_loader, test_loader = get_dataloaders()
 
 # =============================
 # MODELO
@@ -97,14 +97,16 @@ for epoch in range(EPOCHS):
     scheduler.step()
 
     # ── VALIDACIÓN ─────────────────────────
-    # Evaluamos en test_loader al final de cada epoch
-    # para saber si el modelo está mejorando y guardar el mejor
+    # Evaluamos en valid_loader al final de cada epoch
+    # para saber si el modelo está mejorando y guardar el mejor.
+    # test_loader se reserva para una única evaluación final
+    # y no participa en la selección del modelo (evita leakage).
     model.eval()
     correct = 0
     total = 0
 
     with torch.no_grad():
-        for images, labels in test_loader:
+        for images, labels in valid_loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
             preds = outputs.argmax(dim=1)
@@ -127,20 +129,36 @@ for epoch in range(EPOCHS):
         torch.save(model.state_dict(), model_path)
         logger.info(f"✅ Mejor modelo guardado (accuracy: {val_accuracy*100:.2f}%)")
 
-logger.info(f"Entrenamiento finalizado. Mejor accuracy: {best_val_accuracy*100:.2f}%")
+logger.info(f"Entrenamiento finalizado. Mejor accuracy (valid): {best_val_accuracy*100:.2f}%")
 logger.info(f"Modelo guardado en: {model_path}")
+
+# =============================
+# EVALUACIÓN FINAL (TEST)
+# =============================
+# Única vez que se usa test_loader: no participó en la selección del
+# modelo durante el entrenamiento, por lo que da una estimación no sesgada.
+best_model = get_model(pretrained=False)
+best_model.load_state_dict(torch.load(model_path, map_location="cpu"))
+best_model.cpu()
+best_model.eval()
+
+test_correct = 0
+test_total = 0
+with torch.no_grad():
+    for images, labels in test_loader:
+        outputs = best_model(images)
+        preds = outputs.argmax(dim=1)
+        test_correct += (preds == labels).sum().item()
+        test_total += labels.size(0)
+
+test_accuracy = test_correct / test_total if test_total > 0 else 0.0
+logger.info(f"Test Accuracy (evaluación final): {test_accuracy*100:.2f}%")
 
 # =============================
 # QUANTIZATION (OPTIMIZACIÓN)
 # =============================
 # Se aplica sobre el mejor modelo guardado para no perder el best checkpoint
 logger.info("Aplicando quantization al mejor modelo...")
-
-# Cargar el mejor modelo para quantizar
-best_model = get_model(pretrained=False)
-best_model.load_state_dict(torch.load(model_path, map_location="cpu"))
-best_model.cpu()  # quantization solo funciona en CPU
-best_model.eval()
 
 quantized_model = torch.quantization.quantize_dynamic(
     best_model,

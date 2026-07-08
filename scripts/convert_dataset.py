@@ -33,6 +33,7 @@ ROOT         = pathlib.Path(__file__).resolve().parents[1]
 RAW_DIR      = ROOT / "data" / "raw"
 FALL_DIR     = RAW_DIR / "fall"
 NO_FALL_DIR  = RAW_DIR / "no_fall"
+POOL_LOG     = RAW_DIR / "pool" / "pool_log.csv"
 OUTPUT       = ROOT / "data" / "processed"
 LABELS_OUT   = OUTPUT / "dataset_labels.csv"
 
@@ -61,6 +62,14 @@ def collect_images(folder: pathlib.Path) -> list[pathlib.Path]:
     if not folder.exists():
         return []
     return [f for f in folder.iterdir() if f.suffix.lower() in IMG_EXTS]
+
+
+def load_source_lookup() -> dict[str, str]:
+    """filename -> procedencia real (pexels/video), segun pool_log.csv"""
+    if not POOL_LOG.exists():
+        return {}
+    with open(POOL_LOG, encoding="utf-8") as f:
+        return {row["filename"]: row["source"] for row in csv.DictReader(f)}
 
 
 print("\n" + "=" * 60)
@@ -93,6 +102,7 @@ for split in SPLITS:
     for label in LABELS:
         (OUTPUT / split / label).mkdir(parents=True, exist_ok=True)
 
+source_lookup = load_source_lookup()
 label_rows: list[dict] = []
 
 for label in LABELS:
@@ -111,7 +121,7 @@ for label in LABELS:
             label_rows.append({
                 "filename":  src.name,
                 "label":     label,
-                "source":    str(src.parent.name),
+                "source":    source_lookup.get(src.name, "unknown"),
                 "split":     split,
                 "timestamp": datetime.now().isoformat(),
             })

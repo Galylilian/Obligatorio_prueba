@@ -46,6 +46,12 @@ if not PEXELS_API_KEY:
         "Conseguila gratis en https://www.pexels.com/api/"
     )
 
+FIELDNAMES = [
+    "filename", "source", "timestamp",
+    "search_query", "source_id", "url", "hash",
+    "video_file", "frame_idx", "time_sec",
+]
+
 IMAGES_PER_QUERY = 20
 MIN_WIDTH        = 224
 MIN_HEIGHT       = 224
@@ -112,11 +118,20 @@ def load_existing_log() -> tuple[list[dict], set[str]]:
     rows: list[dict] = []
     hashes: set[str] = set()
     if LOG_FILE.exists():
-        with open(LOG_FILE, encoding="utf-8") as f:
+        with open(LOG_FILE, encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
                 rows.append(row)
                 hashes.add(row.get("hash", ""))
     return rows, hashes
+
+
+def write_log(log_rows: list[dict]) -> None:
+    tmp_file = LOG_FILE.with_suffix(".csv.tmp")
+    with open(tmp_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(log_rows)
+    tmp_file.replace(LOG_FILE)
 
 
 def scrape_pool() -> None:
@@ -167,21 +182,20 @@ def scrape_pool() -> None:
 
             log_rows.append({
                 "filename":     filename,
-                "search_query": query,
                 "source":       "pexels",
+                "timestamp":    datetime.now().isoformat(),
+                "search_query": query,
                 "source_id":    str(photo.get("id", "")),
                 "url":          url,
                 "hash":         h,
-                "timestamp":    datetime.now().isoformat(),
+                "video_file":   "",
+                "frame_idx":    "",
+                "time_sec":     "",
             })
             counters["saved"] += 1
             time.sleep(SLEEP_BETWEEN)
 
-    with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
-        fieldnames = ["filename", "search_query", "source", "source_id", "url", "hash", "timestamp"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(log_rows)
+    write_log(log_rows)
 
     print("\n" + "=" * 60)
     print("RESUMEN")
@@ -194,7 +208,8 @@ def scrape_pool() -> None:
     print("=" * 60)
     print("\nPASO 1 completo.")
     print("Siguiente paso:")
-    print("  python scripts/label_tool.py   (o subir imagenes manualmente a fall/ y no_fall/)")
+    print("  python scripts/extract_video_frames.py   (opcional: sumar frames de video al pool)")
+    print("  python scripts/label_tool.py")
     print("  python scripts/convert_dataset.py")
 
 
