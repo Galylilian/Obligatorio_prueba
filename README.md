@@ -44,7 +44,8 @@ Obligatorio_prueba/
 │   ├── scrape_dataset.py                      # Scraper Pexels → data/raw/pool/
 │   ├── label_tool.py                          # Etiquetador manual (servidor HTTP)
 │   ├── convert_dataset.py                     # fall/ + no_fall/ → train/valid/test + CSV
-│   └── compare_models.py                      # Compara predicciones entre modelos
+│   ├── compare_models.py                      # Compara predicciones entre modelos
+│   └── video_predict.py                       # Corre detect_falls_from_video() sin la API
 │
 ├── src/
 │   │
@@ -353,6 +354,62 @@ docker-compose down -v
 
 ```bash
 pytest tests/
+```
+
+---
+
+## Despliegue en AWS (EC2, sin GPU)
+
+El proyecto está pensado para correr en una instancia EC2 de AWS Academy sin GPU, usando los mismos `Dockerfile`/`docker-compose.yml` que en local. `requirements.txt` instala PyTorch en su build CPU-only (`torch==2.7.1+cpu`), evitando descargar los paquetes con CUDA (~5 GB) que no sirven de nada sin GPU y pueden llenar el disco de la instancia.
+
+### 1. Instancia
+
+- EC2 (AWS Academy), tipo `t3.medium` o superior recomendado (el fine-tuning ya viene entrenado, en producción solo se hace inferencia CPU).
+- Security Group con los puertos `8080` (FastAPI), `8501` (Streamlit) y `3000` (Grafana) abiertos.
+- Docker y Docker Compose instalados en la instancia.
+
+### 2. Clonar y configurar
+
+```bash
+git clone <repo>
+cd Obligatorio_prueba
+```
+
+Crear el `.env` en la raíz (no se sube a GitHub):
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@postgres:5432/falldetector
+MODEL_TYPE=normal
+```
+
+`PEXELS_API_KEY` solo hace falta si vas a correr `scrape_dataset.py` en la instancia; para servir el modelo ya entrenado no es necesario.
+
+### 3. Subir los modelos entrenados
+
+Los `.pth` en `models/` no están en git (pesan demasiado). Copiarlos a la instancia, por ejemplo con `scp`:
+
+```bash
+scp -r models/ ubuntu@<ip-ec2>:~/Obligatorio_prueba/models/
+```
+
+### 4. Levantar los servicios
+
+```bash
+docker-compose up --build -d
+```
+
+Al ser CPU-only, el build es considerablemente más liviano y rápido que con soporte CUDA.
+
+| Servicio | URL |
+| -------- | --- |
+| FastAPI (Swagger) | `http://<ip-ec2>:8080/docs` |
+| Streamlit | `http://<ip-ec2>:8501` |
+| Grafana | `http://<ip-ec2>:3000` (admin / admin) |
+
+### 5. Verificar
+
+```bash
+curl http://<ip-ec2>:8080/health
 ```
 
 ---
