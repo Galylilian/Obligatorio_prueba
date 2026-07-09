@@ -13,9 +13,10 @@ Obligatorio_prueba/
 │   ├── raw/                                   # Imágenes sin procesar
 │   │   ├── pool/                              # scrape_dataset.py + extract_video_frames.py (sin etiqueta)
 │   │   │   └── pool_log.csv                   # Log: filename, source (pexels/video), timestamp, ...
-│   │   ├── fall/                              # Imágenes etiquetadas como caída (manual)
-│   │   └── no_fall/                           # Imágenes etiquetadas como no caída (manual)
-│   ├── processed/                             # Dataset listo para entrenamiento
+│   │   ├── labeled/                           # Imágenes ya etiquetadas ("Listo, siguiente" en label_tool.py)
+│   │   ├── duplicate_review/                  # Comparaciones generadas por find_inconsistent_duplicates.py
+│   │   └── bbox_log.csv                       # Una fila por PERSONA: filename, label, box normalizado, timestamp
+│   ├── processed/                             # Dataset listo para entrenamiento (recortado por persona)
 │   │   ├── train/
 │   │   │   ├── fall/
 │   │   │   └── no_fall/
@@ -25,7 +26,7 @@ Obligatorio_prueba/
 │   │   ├── test/
 │   │   │   ├── fall/
 │   │   │   └── no_fall/
-│   │   └── dataset_labels.csv                 # Trazabilidad: imagen, label, split, timestamp
+│   │   └── dataset_labels.csv                 # Trazabilidad: filename, source_image, label, source, split, timestamp
 │   └── video/                                 # Videos subidos y frames con caídas
 │       ├── input/                             # Videos propios para extraer frames (dataset)
 │       ├── uploads/                           # Videos subidos vía API (inferencia)
@@ -44,8 +45,9 @@ Obligatorio_prueba/
 ├── scripts/
 │   ├── scrape_dataset.py                      # Scraper Pexels → data/raw/pool/
 │   ├── extract_video_frames.py                # Frames de data/video/input/ → data/raw/pool/
-│   ├── label_tool.py                          # Etiquetador manual (servidor HTTP)
-│   ├── convert_dataset.py                     # fall/ + no_fall/ → train/valid/test + CSV
+│   ├── label_tool.py                          # Etiquetador manual (servidor HTTP, multi-persona por imagen)
+│   ├── find_inconsistent_duplicates.py        # Detecta labels en conflicto entre imágenes casi-duplicadas
+│   ├── convert_dataset.py                     # bbox_log.csv + labeled/ → recortes en train/valid/test + CSV
 │   ├── compare_models.py                      # Compara predicciones entre modelos
 │   ├── benchmark_quantization.py               # Latencia normal vs. cuantizado sobre test_loader real
 │   └── video_predict.py                       # Corre detect_falls_from_video() sin la API
@@ -65,10 +67,12 @@ Obligatorio_prueba/
 │   │   ├── model.py                           # Definición ResNet18 con fine-tuning
 │   │   ├── train.py                           # Entrenamiento con class weights + quantization
 │   │   ├── evaluate.py                        # Evaluación offline → genera metrics.json
-│   │   ├── classification.py                  # Clase ImageClassifier para inferencia
+│   │   ├── classification.py                  # Clase ImageClassifier: detecta persona, recorta y clasifica
+│   │   ├── detector.py                        # PersonDetector (ssdlite320_mobilenet_v3_large, COCO)
 │   │   ├── gradcam.py                         # Implementación GradCAM con hooks
 │   │   └── preprocessing/
-│   │       └── transforms.py                  # Transforms de train (augmentation) y test
+│   │       ├── transforms.py                  # Transforms de train (augmentation) y test
+│   │       └── cropping.py                    # crop_to_box() — recorte con margen (offline y online)
 │   │
 │   ├── data/
 │   │   └── dataset.py                         # get_dataloaders() con ImageFolder
@@ -83,7 +87,8 @@ Obligatorio_prueba/
 │   └── utils/
 │       ├── metrics.py                         # compute_metrics() — accuracy, F1, precision, recall
 │       ├── logger.py                          # get_logger() — logger centralizado
-│       └── video_detection.py                 # detect_falls_from_video() — frame a frame
+│       ├── video_detection.py                 # detect_falls_from_video() — frame a frame
+│       └── duplicates.py                      # dhash() + build_duplicate_groups() — perceptual hash compartido
 │
 ├── app/
 │   └── streamlit_app.py                       # Interfaz visual — dashboard, imágenes y video
@@ -99,14 +104,19 @@ Obligatorio_prueba/
 ├── tests/
 │   ├── conftest.py                            # Fixtures — cliente de test con DB en memoria
 │   ├── test_api.py
+│   ├── fixtures/
+│   │   └── person.jpg                         # Foto real usada para probar el camino "con persona detectada"
+│   ├── core/
+│   │   ├── test_cropping.py                   # Tests de crop_to_box()
+│   │   └── test_detector.py                   # Tests de PersonDetector
 │   └── api/
-│       └── test_routers.py                    # Tests de /predict, /gradcam, /dashboard/stats
+│       └── test_routers.py                    # Tests de /predict, /gradcam, /dashboard/stats (con y sin persona)
 │
 ├── docs/
 │   ├── endpoints.md                           # Documentación de endpoints con ejemplos curl
 │   └── arquitectura.md                        # Explicación técnica de cada archivo
 │
-├── Dockerfile                                 # Imagen de la API FastAPI
+├── Dockerfile                                 # Imagen de la API FastAPI (pre-cachea pesos del detector)
 ├── Dockerfile.streamlit                       # Imagen de Streamlit
 ├── docker-compose.yml                         # Orquestación: FastAPI + Streamlit + PostgreSQL + Grafana
 ├── requirements.txt                           # Dependencias de producción
@@ -121,9 +131,9 @@ Obligatorio_prueba/
 
 ## Problema
 
-Clasificación binaria: dada una imagen o un video, el sistema determina si la persona está **caída** (`fall`) o **no caída** (`no_fall`).
+Clasificación binaria: dada una imagen o un video, el sistema determina si **cada persona detectada** está **caída** (`fall`) o **no caída** (`no_fall`). Una misma imagen puede tener varias personas, cada una con su propio resultado.
 
-El dataset se construye combinando dos fuentes en un mismo pool sin etiqueta, y etiquetando **manual** imagen por imagen. El etiquetado lo hace un humano mirando cada imagen, no la query de búsqueda ni la predicción de un modelo, evitando el ruido del weak labeling.
+El dataset se construye combinando dos fuentes en un mismo pool sin etiqueta, y etiquetando **manualmente, por persona**. El etiquetado lo hace un humano mirando cada imagen y dibujando un bounding box por cada persona, no la query de búsqueda ni la predicción de un modelo, evitando el ruido del weak labeling.
 
 ---
 
@@ -149,20 +159,17 @@ scrape_dataset.py               extract_video_frames.py
               data/raw/pool/            (Pexels + frames de video, sin etiqueta)
               pool_log.csv              (procedencia: pexels / video)
                        │
-                 label_tool.py          (etiquetado manual en el navegador)
-                       │
-            ┌──────────┴──────────┐
-            ▼                     ▼
-     data/raw/fall/        data/raw/no_fall/
-            │                     │
-            └──────────┬──────────┘
+                 label_tool.py          (por cada PERSONA: box + fall/no_fall)
+                       │                 bbox_log.csv (filename, label, box)
                        ▼
-              convert_dataset.py       (usa pool_log.csv para el source real)
+              data/raw/labeled/         (imagen ya completa: "Listo, siguiente")
+                       │
+              convert_dataset.py        (recorta cada persona a su box + margen)
                        │
             ┌──────────┼──────────┐
             ▼          ▼          ▼
           train/     valid/     test/
-     dataset_labels.csv  (filename, label, source, split, timestamp)
+     dataset_labels.csv  (filename, source_image, label, source, split, timestamp)
 ```
 
 ### Queries utilizadas
@@ -184,10 +191,10 @@ person lying on ground
 ### Política de etiquetado
 
 - **Un único criterio, humano y visual**: se etiqueta mirando la imagen, no la query que la trajo al pool ni ninguna predicción de un modelo. Esto evita el ruido típico del *weak labeling* (asumir la clase a partir del texto de búsqueda).
-- **Clase asignada = lo que se ve en el frame**: `fall` si la persona está caída/en el piso en ese instante; `no_fall` en cualquier otra postura (parada, sentada, caminando, agachada, etc.).
+- **Clase asignada = lo que se ve en el frame, por persona**: `fall` si esa persona está caída/en el piso en ese instante; `no_fall` en cualquier otra postura (parada, sentada, caminando, agachada, etc.). Una misma imagen con varias personas puede tener clases distintas para cada una.
 - **Ambiguas → se descartan, no se fuerzan**: si la imagen no permite decidir con confianza (mala calidad, postura ambigua, persona parcialmente fuera de cuadro), se usa `S` (saltar) o `D` (borrar) en `label_tool.py` en lugar de adivinar la clase.
 - **Mismo criterio sin importar la fuente**: las imágenes de Pexels y los frames de video se mezclan en un único pool sin etiqueta (`data/raw/pool/`) antes de etiquetar, así que el origen de la imagen no influye en la decisión.
-- **Trazabilidad**: cada decisión de etiquetado mueve el archivo a `data/raw/fall/` o `data/raw/no_fall/`, y `convert_dataset.py` deja registrado en `dataset_labels.csv` la clase, el split y la procedencia real (`pool_log.csv`) de cada imagen.
+- **Trazabilidad**: cada persona confirmada (F/N) queda registrada en `data/raw/bbox_log.csv` (label + box), y al dar "Listo" la imagen se mueve a `data/raw/labeled/`. `convert_dataset.py` deja registrado en `dataset_labels.csv` la clase, el split y la procedencia real (`pool_log.csv`) de cada recorte.
 
 ### División del dataset
 
@@ -197,7 +204,9 @@ person lying on ground
 | valid  | 15%        |
 | test   | 15%        |
 
-División estratificada por clase con semilla fija (`42`) para reproducibilidad.
+División estratificada por **clase y por fuente** (`fall`/`no_fall` × `pexels`/`video`) con semilla fija (`42`) para reproducibilidad: cada combinación se divide 70/15/15 por separado y luego se combinan los splits.
+
+**Anti-fuga entre splits**: antes de dividir, las imágenes casi-duplicadas (frames de video separados por poco tiempo, o fotos casi idénticas) se agrupan con un perceptual hash (dHash, distancia de Hamming ≤ 4/64) y el grupo entero va al mismo split — nunca la mitad a train y la mitad a test. El EDA (`notebooks/eda.ipynb`) detectó que, sin este agrupado, un porcentaje alto de pares casi-duplicados terminaba repartido entre splits distintos, inflando artificialmente la accuracy de test.
 
 ---
 
@@ -207,6 +216,12 @@ División estratificada por clase con semilla fija (`42`) para reproducibilidad.
 |--------------------------|--------------------------------------------------------|
 | `resnet18.pth`           | ResNet18 con fine-tuning completo desde pesos ImageNet |
 | `resnet18_quantized.pth` | Versión cuantizada (dynamic quantization int8)         |
+
+### Detector de personas (previo a la clasificación)
+
+Tanto el dataset de entrenamiento como la API clasifican un **recorte de la persona**, no la imagen completa. En el dataset, ese recorte sale del bounding box dibujado a mano en `label_tool.py`; en producción no hay un humano dibujando el box, así que `src/core/detector.py` (`PersonDetector`, `ssdlite320_mobilenet_v3_large` preentrenado en COCO, sin fine-tuning) detecta la persona automáticamente y aplica el mismo recorte (con el mismo margen de ~15%, ver `src/core/preprocessing/cropping.py`) antes de pasarle la imagen al clasificador. Esto evita reintroducir *training-serving skew* entre el dataset y la API.
+
+Se eligió el detector más liviano de `torchvision` porque el proyecto corre inferencia en CPU (EC2 sin GPU): prioriza latencia sobre precisión de localización. Si no se detecta ninguna persona, `/predict`, `/predict/batch` y `/predict/video` devuelven `person_detected: false` y `label: null` en vez de forzar una clasificación; `/gradcam` devuelve un error explícito, porque no hay nada que explicar.
 
 ### Desbalance de clases
 
@@ -254,15 +269,15 @@ scrape_dataset.py          extract_video_frames.py
   data/raw/pool/             (Pexels + frames de video, sin etiqueta)
   pool_log.csv                (procedencia: pexels / video)
           │
-      label_tool.py
+      label_tool.py           (por persona: box + fall/no_fall; una imagen
+                                 puede tener varias personas y labels)
+      bbox_log.csv             (filename, label, box — una fila por persona)
           │
-  ┌───────┴───────┐
-fall/          no_fall/
-  └───────┬───────┘
+  data/raw/labeled/            (imagen completa, "Listo, siguiente")
           │
-  convert_dataset.py
+  convert_dataset.py         (recorta cada persona a su box + margen, cropping.py)
           │
-  data/processed/             (ImageFolder ready)
+  data/processed/             (ImageFolder ready, ya recortado a la persona)
           │
       train.py                (ResNet18 + class weights + best ckpt + quantization)
           │
@@ -275,6 +290,8 @@ Pipeline de producción (online)
 
 docker-compose up
   ├─ FastAPI  :8080     (predict / gradcam / predict/video / dashboard/stats)
+  │     └─ PersonDetector (ssdlite320_mobilenet_v3_large) detecta + recorta
+  │        antes de clasificar, mismo margen que convert_dataset.py
   ├─ Streamlit :8501    (UI: dashboard + predicción de imágenes y video)
   ├─ PostgreSQL :5432   (tabla predictions)
   └─ Grafana  :3000     (dashboard operacional)
@@ -285,10 +302,17 @@ docker-compose up
 ## Desafíos de producción resueltos
 
 ### Data Leakage
-Separación estricta train/valid/test en `convert_dataset.py` con semilla fija antes de cualquier entrenamiento.
+Separación estricta train/valid/test en `convert_dataset.py` con semilla fija antes de cualquier entrenamiento, estratificada por `(clase, fuente)`. Además, las imágenes casi-duplicadas (dHash, `src/utils/duplicates.py`) se agrupan antes de dividir para que un grupo entero vaya al mismo split — sin esto, frames de video muy cercanos entre sí podían quedar repartidos entre train y test (detectado por el EDA en `notebooks/eda.ipynb`).
 
 ### Training-Serving Skew
 Las transformaciones están unificadas en `transforms.py`. La API usa exactamente `get_test_transforms()`, el mismo preprocesamiento del conjunto de test.
+
+**Recorte a la persona**: esta fue la fuente de skew más interesante del proyecto, porque no es un problema que existiera desde el principio — lo introdujimos nosotros mismos al decidir recortar el dataset al bounding box de cada persona. El dataset de entrenamiento se recorta con un box dibujado a mano por el etiquetador. En producción, evidentemente, no hay un humano dibujando un box antes de cada predicción. Si no resolvíamos esto, la API iba a clasificar la imagen completa mientras el modelo fue entrenado para clasificar recortes de personas — un skew grave y automático, garantizado en el 100% de las predicciones reales.
+
+La solución fue agregar un detector de personas automático (`src/core/detector.py`, `PersonDetector`) que corre antes de la clasificación en producción, y que usa exactamente la misma función de recorte con margen (`crop_to_box()`, `src/core/preprocessing/cropping.py`, ~15% de margen) que ya usa `convert_dataset.py` con el box dibujado a mano. No es el detector el que se comparte entre offline y online (en el dataset no hace falta detectar nada, el humano ya marcó a la persona) — lo que se comparte es la función de recorte, para que un box de origen humano y un box de origen automático produzcan el mismo tipo de imagen recortada a la entrada del clasificador. Elegimos `ssdlite320_mobilenet_v3_large` (preentrenado en COCO, sin fine-tuning) por ser el detector más liviano disponible en `torchvision`, priorizando latencia sobre precisión de localización — el proyecto corre inferencia en CPU (pensado para EC2 sin GPU), y un detector más pesado hubiera dominado la latencia total de `/predict`.
+
+### Calidad del etiquetado
+`scripts/find_inconsistent_duplicates.py` detecta imágenes casi-duplicadas con labels en conflicto (`fall` y `no_fall` sobre la misma persona) — señal de doble confirmación accidental o de un error real de etiquetado — antes de armar el dataset final.
 
 ### Desbalance de clases
 `CrossEntropyLoss` recibe pesos calculados automáticamente desde la distribución real del conjunto de train, sin necesidad de configuración manual.
@@ -342,15 +366,25 @@ Recorre los videos de `data/video/input/` y guarda **todos** los frames (sin usa
 
 ### 5. Etiquetar imágenes
 
-**Opción A — Herramienta visual:**
 ```bash
 python scripts/label_tool.py
 ```
-Abre el navegador en `http://localhost:8765`. Atajos: `F`=fall, `N`=no_fall, `S`=saltar, `D`=borrar.
-Las imágenes etiquetadas se mueven automáticamente a `data/raw/fall/` o `data/raw/no_fall/`, sin importar si vinieron de Pexels o de un video: el pool las mezcla y el etiquetado es el mismo para todas.
+Abre el navegador en `http://localhost:8765`. La unidad de etiquetado es la **persona**, no la imagen: una misma foto puede tener varias personas, cada una con su propio estado.
 
-**Opción B — Subida manual:**
-Copiar directamente las imágenes ya clasificadas a `data/raw/fall/` y `data/raw/no_fall/`. En este caso no quedan registradas en `pool_log.csv`, y `convert_dataset.py` les asigna `source=unknown`.
+1. Dibujá un rectángulo alrededor de una persona (click y arrastrar sobre la imagen).
+2. Marcá `F`=fall o `N`=no_fall para **esa persona**. Queda registrada en `data/raw/bbox_log.csv` (una fila por persona: filename, label, box normalizado 0-1) y se muestra superpuesta en la imagen, con un botón para borrarla si te equivocaste.
+3. Repetí 1-2 si hay más personas en la misma imagen.
+4. `Enter` = **Listo, siguiente imagen** (requiere al menos una persona marcada): mueve la imagen de `data/raw/pool/` a `data/raw/labeled/`. `S`=saltar (no registra nada, sigue en el pool) y `D`=borrar (descarta la imagen entera) no requieren ninguna persona marcada.
+
+Esta es la **única** vía de entrada soportada: toda imagen etiquetada tiene que haber pasado antes por `data/raw/pool/` (vía `scrape_dataset.py` o `extract_video_frames.py`), por lo que siempre queda registrada en `pool_log.csv` con su `source` real (`pexels` o `video`). No se admite copiar imágenes directamente a una carpeta de clase: `convert_dataset.py` rechaza el dataset si encuentra una fila de `bbox_log.csv` sin procedencia conocida o cuya imagen no llegó a `data/raw/labeled/`.
+
+### 5.1 (Opcional) Revisar boxes duplicados o con labels en conflicto
+
+```bash
+python scripts/find_inconsistent_duplicates.py
+```
+
+Agrupa imágenes casi-duplicadas (mismo dHash que usa `convert_dataset.py`) y avisa si dentro de un grupo aparecen tanto `fall` como `no_fall` — señal de un posible error de etiquetado o de que la misma persona quedó confirmada dos veces. Guarda una comparación lado a lado por cada caso en `data/raw/duplicate_review/` para revisión visual. No corrige nada automáticamente: cada caso se decide a mano.
 
 ### 6. Convertir y dividir el dataset
 
@@ -358,7 +392,7 @@ Copiar directamente las imágenes ya clasificadas a `data/raw/fall/` y `data/raw
 python scripts/convert_dataset.py
 ```
 
-Lee desde `data/raw/fall/` y `data/raw/no_fall/`, divide en train/valid/test (70/15/15) y genera `data/processed/dataset_labels.csv` con la procedencia real de cada imagen (tomada de `pool_log.csv`).
+Lee `data/raw/bbox_log.csv` (una fila por persona) y las imágenes desde `data/raw/labeled/`. Por cada persona, **recorta la imagen a su bounding box** (con ~15% de margen, ver `src/core/preprocessing/cropping.py`) y la guarda como un ejemplo de entrenamiento independiente — una misma imagen con dos personas genera dos ejemplos, potencialmente uno `fall` y otro `no_fall`. Divide en train/valid/test (70/15/15) y genera `data/processed/dataset_labels.csv` con la procedencia real de cada ejemplo.
 
 ### 7. Entrenar el modelo
 
@@ -462,18 +496,18 @@ curl http://<ip-ec2>:8080/health
 
 | Métrica   | Valor  |
 |-----------|--------|
-| Accuracy  | 88.00% |
-| Precision | 94.12% |
-| Recall    | 88.89% |
-| F1 Score  | 91.43% |
+| Accuracy  | 75.76% |
+| Precision | 75.76% |
+| Recall    | 100%   |
+| F1 Score  | 86.21% |
 
-Evaluado sobre el conjunto de test (25 imágenes) con el modelo `resnet18.pth`.
-
-Matriz de confusión (fall=0, no_fall=1):
+Matriz de confusión (fall=0, no_fall=1), del `metrics.json` actualmente en el repo:
 
 | Real / Pred. | Pred. fall | Pred. no_fall |
 | --- | --- | --- |
-| Real fall | 6 | 1 |
-| Real no_fall | 2 | 16 |
+| Real fall | 0 | 8 |
+| Real no_fall | 0 | 25 |
 
-La precision es alta (94%) — cuando el modelo dice "fall", casi siempre acierta. El recall del 89% implica que se pierden 2 caídas reales de 9. Para producción, ese es el error más crítico y mejora con más datos de entrenamiento en la clase `fall`.
+**Estas métricas corresponden al modelo entrenado con el pipeline anterior (imagen completa, sin recorte por persona) y ya están obsoletas.** La matriz de confusión muestra que ese modelo nunca predice `fall` (0 aciertos y 0 predicciones en esa clase) — clasifica todo como `no_fall`, un modelo degenerado que solo "acierta" porque `no_fall` es la clase mayoritaria. Las métricas de precision/recall/accuracy de la tabla son las de `no_fall` (default de scikit-learn); el recall real de `fall` es **0%**.
+
+Con el nuevo pipeline de este branch (recorte por persona vía `PersonDetector`/`crop_to_box`, split anti-fuga por dHash, EDA con verificación de calidad), hace falta reconstruir el dataset (`convert_dataset.py`) y reentrenar (`python -m src.core.train` + `python -m src.core.evaluate`) para tener métricas representativas del pipeline actual — no se incluyen números "de mentira" hasta no correr ese entrenamiento real.
