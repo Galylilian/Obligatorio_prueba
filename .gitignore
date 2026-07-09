@@ -114,11 +114,6 @@ celerybeat.pid
 *.pot
 
 # =============================
-# MODELOS (archivos pesados)
-# =============================
-/models/*.pth
-
-# =============================
 # DATA — se ignora el contenido pero se mantienen las carpetas
 # Los .gitkeep permiten que las carpetas aparezcan en GitHub
 # =============================
