@@ -9,6 +9,8 @@ import io
 
 from src.core.model import get_model
 from src.core.gradcam import GradCAM, overlay_heatmap
+from src.core.detector import get_person_detector
+from src.core.preprocessing.cropping import crop_to_box
 from src.core.preprocessing.transforms import get_test_transforms
 from src.settings.config import MODEL_PATH, DEVICE
 from src.utils.logger import get_logger
@@ -42,6 +44,11 @@ grad_cam = GradCAM(model, target_layer)
 # =============================
 transform = get_test_transforms()
 
+# Detector de personas: el heatmap se genera sobre el recorte de la persona
+# (lo mismo que ve el clasificador), no sobre la imagen completa.
+detector = get_person_detector()
+CROP_MARGIN = 0.15
+
 # =============================
 # ENDPOINT
 # =============================
@@ -55,7 +62,19 @@ async def generate_gradcam(file: UploadFile):
         # CARGAR IMAGEN
         # =========================
         image = Image.open(file.file).convert("RGB")
-        input_tensor = transform(image).unsqueeze(0).to(DEVICE)
+
+        # =========================
+        # DETECTAR PERSONA Y RECORTAR
+        # =========================
+        box = detector.detect(image)
+        if box is None:
+            logger.info("No se detecto ninguna persona en la imagen")
+            return {
+                "error": "No se detectó ninguna persona en la imagen"
+            }
+
+        crop = crop_to_box(image, box, margin=CROP_MARGIN)
+        input_tensor = transform(crop).unsqueeze(0).to(DEVICE)
 
         logger.info("Imagen procesada correctamente")
 
@@ -83,9 +102,9 @@ async def generate_gradcam(file: UploadFile):
             cam = cam / cam.max()
 
         # =========================
-        # OVERLAY
+        # OVERLAY (sobre el recorte, no la imagen completa)
         # =========================
-        img_np = np.array(image.resize((224, 224)))
+        img_np = np.array(crop.resize((224, 224)))
         result = overlay_heatmap(img_np, cam)
 
         # =========================

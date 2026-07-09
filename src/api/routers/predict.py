@@ -29,26 +29,31 @@ async def predict(file: UploadFile, db: Session = Depends(get_db)):
 
         logger.info("Imagen cargada correctamente")
 
-        # Ejecutar predicción
+        # Ejecutar predicción (detecta persona, recorta y clasifica)
         prediction = classifier.predict([image])["images"][0]
 
         logger.info(f"Predicción: {prediction}")
 
         # =============================
         # GUARDAR EN BASE DE DATOS ✅
+        # Solo si se detecto una persona: si no hay nada que clasificar,
+        # no tiene sentido loguear una prediccion.
         # =============================
-        record = Prediction(
-            filename=file.filename,
-            label=prediction["label"],
-            confidence=prediction["confidence"],
-            model_type=MODEL_TYPE,
-        )
-        db.add(record)
-        db.commit()
+        if prediction["person_detected"]:
+            record = Prediction(
+                filename=file.filename,
+                label=prediction["label"],
+                confidence=prediction["confidence"],
+                model_type=MODEL_TYPE,
+            )
+            db.add(record)
+            db.commit()
 
         return {
             "label": prediction["label"],
             "confidence": prediction["confidence"],
+            "person_detected": prediction["person_detected"],
+            "bbox": prediction["bbox"],
         }
 
     except Exception as e:
@@ -76,18 +81,21 @@ async def predict_batch(
 
         results = []
         for filename, pred in zip(filenames, prediction["images"]):
-            record = Prediction(
-                filename=filename,
-                label=pred["label"],
-                confidence=pred["confidence"],
-                model_type=MODEL_TYPE,
-            )
-            db.add(record)
+            if pred["person_detected"]:
+                record = Prediction(
+                    filename=filename,
+                    label=pred["label"],
+                    confidence=pred["confidence"],
+                    model_type=MODEL_TYPE,
+                )
+                db.add(record)
 
             results.append({
                 "filename": filename,
                 "label": pred["label"],
                 "confidence": pred["confidence"],
+                "person_detected": pred["person_detected"],
+                "bbox": pred["bbox"],
             })
 
         db.commit()

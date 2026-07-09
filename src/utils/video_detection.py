@@ -55,22 +55,26 @@ def detect_falls_from_video(
                 cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             )
 
-            # ✅ INFERENCIA
+            # ✅ INFERENCIA (detecta persona, recorta y clasifica)
             prediction = classifier.predict([img])["images"][0]
 
             label = prediction["label"]
             confidence = prediction["confidence"]
+            person_detected = prediction["person_detected"]
 
             # ✅ TIEMPO EN SEGUNDOS
             time_sec = round(frame_idx / fps, 2)
 
             # ✅ RESULTADO FINAL
+            # is_fall solo si ademas se detecto una persona: un frame sin
+            # nadie no cuenta como caida aunque label sea None.
             result = {
                 "frame": frame_idx,
                 "time_sec": time_sec,
                 "label": label,
                 "confidence": confidence,
-                "is_fall": label == "fall"
+                "person_detected": person_detected,
+                "is_fall": person_detected and label == "fall"
             }
 
             results.append(result)
