@@ -116,7 +116,6 @@ Obligatorio_prueba/
 │   ├── endpoints.md                           # Documentación de endpoints con ejemplos curl
 │   └── arquitectura.md                        # Explicación técnica de cada archivo
 │
-├── informe_obligatorio.md                     # Informe de entrega: decisiones y por qué se tomaron
 ├── Dockerfile                                 # Imagen de la API FastAPI (pre-cachea pesos del detector)
 ├── Dockerfile.streamlit                       # Imagen de Streamlit
 ├── docker-compose.yml                         # Orquestación: FastAPI + Streamlit + PostgreSQL + Grafana
