@@ -27,6 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src ./src
 COPY models ./models
 
+# Pre-cachear los pesos COCO del detector de personas (ssdlite320_mobilenet_v3_large,
+# ~14 MB) durante el build, para que el contenedor no dependa de internet en
+# runtime (mismo principio que MODEL_PATH: nada se descarga al arrancar la API).
+RUN python -c "from torchvision.models.detection import ssdlite320_mobilenet_v3_large, SSDLite320_MobileNet_V3_Large_Weights as W; ssdlite320_mobilenet_v3_large(weights=W.DEFAULT)"
+
 # Exponer puerto
 EXPOSE 8080
 

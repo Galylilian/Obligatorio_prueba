@@ -14,8 +14,8 @@ El sistema tiene dos pipelines independientes que comparten el mismo modelo:
 ```text
 ┌─────────────────────────── OFFLINE ───────────────────────────┐
 │ scrape_dataset.py / extract_video_frames.py → data/raw/pool/  │
-│         label_tool.py (etiquetado manual) → fall/ no_fall/    │
-│         convert_dataset.py → data/processed/ (train/valid/test)│
+│  label_tool.py (por persona: box + fall/no_fall) → data/raw/labeled/│
+│  convert_dataset.py (recorta cada persona a su bbox) → data/processed/│
 │         train.py → models/resnet18*.pth                       │
 │         evaluate.py → metrics.json                             │
 └─────────────────────────────────────────────────────────────┘
@@ -24,6 +24,9 @@ El sistema tiene dos pipelines independientes que comparten el mismo modelo:
 ┌─────────────────────────── ONLINE ────────────────────────────┐
 │  Streamlit (8501) ──HTTP──▶ FastAPI (8080) ──SQLAlchemy──▶ Postgres (5432)
 │                                   │                              │
+│                          PersonDetector detecta + recorta        │
+│                          (mismo margen que offline) antes         │
+│                          de clasificar                            │
 │                                   ▼                              │
 │                            Grafana (3000) ◀───────── lee Postgres directamente
 └─────────────────────────────────────────────────────────────┘
@@ -49,9 +52,11 @@ Todos los servicios online se orquestan con `docker-compose.yml` (ver sección [
 - **`model.py`** — Define la arquitectura: ResNet18 preentrenada en ImageNet con la capa `fc` final reemplazada por una capa lineal de 2 clases (fine-tuning completo, no solo la última capa).
 - **`train.py`** — Entrenamiento: calcula `class weights` desde la distribución real de `data/processed/train/`, entrena con `CrossEntropyLoss` ponderado, guarda el mejor checkpoint (`models/resnet18.pth`) y genera además la versión cuantizada (`models/resnet18_quantized.pth`) con `torch.ao.quantization.quantize_dynamic`.
 - **`evaluate.py`** — Evaluación offline sobre `data/processed/test/`. Genera `metrics.json` con accuracy, precision, recall, F1 y matriz de confusión (usa `src/utils/metrics.py`).
-- **`classification.py`** — `ImageClassifier`: carga el modelo (`MODEL_PATH`/`MODEL_TYPE` desde `src/settings/config.py`), aplica `get_test_transforms()` y expone el método de inferencia usado por todos los routers. Es el único punto donde se decide qué pesos (`normal` o `quantized`) sirve la API.
-- **`gradcam.py`** — Implementación de GradCAM con forward/backward hooks sobre `layer4[-1]` de ResNet18 (última capa convolucional), para producir el mapa de activación.
+- **`classification.py`** — `ImageClassifier`: detecta la persona (`PersonDetector`), recorta (`crop_to_box`), aplica `get_test_transforms()` sobre el recorte y clasifica. Si no se detecta ninguna persona, devuelve `person_detected: false` sin forzar una clase. Carga el modelo (`MODEL_PATH`/`MODEL_TYPE` desde `src/settings/config.py`) y expone el método de inferencia usado por todos los routers. Es el único punto donde se decide qué pesos (`normal` o `quantized`) sirve la API.
+- **`detector.py`** — `PersonDetector`: detector de personas (`ssdlite320_mobilenet_v3_large`, preentrenado en COCO, sin fine-tuning) usado como paso previo a la clasificación. `get_person_detector()` expone un singleton compartido entre `classification.py` y el router de `gradcam.py`, para no cargar el modelo dos veces.
+- **`gradcam.py`** — Implementación de GradCAM con forward/backward hooks sobre `layer4[-1]` de ResNet18 (última capa convolucional), para producir el mapa de activación. Corre sobre el recorte de la persona (el mismo que ve el clasificador), no sobre la imagen completa.
 - **`preprocessing/transforms.py`** — Único lugar donde se definen las transformaciones de imagen: `get_train_transforms()` (con augmentation) y `get_test_transforms()` (determinística). La API usa exactamente `get_test_transforms()`, igual que la evaluación offline.
+- **`preprocessing/cropping.py`** — `crop_to_box()`: recorta una imagen a un bounding box normalizado (0-1) con margen configurable (~15% por defecto). Usado tanto por `convert_dataset.py` (recorte offline, box dibujado a mano) como por `PersonDetector` (recorte online, box detectado) — un único lugar para esa lógica, para no reintroducir skew entre dataset y producción.
 
 ### `src/data/`
 
@@ -71,6 +76,7 @@ Configuración centralizada leída de variables de entorno: `MODEL_TYPE` / `MODE
 - **`metrics.py`** — `compute_metrics()`: accuracy, precision, recall, F1, matriz de confusión (usado por `evaluate.py`).
 - **`logger.py`** — `get_logger()`, logging centralizado.
 - **`video_detection.py`** — `detect_falls_from_video()`: recorre el video frame a frame con OpenCV, analiza un frame cada 5 segundos (para evitar redundancia), corre el clasificador sobre cada uno y guarda en disco (`data/video/frames/`) los frames donde detectó `fall`.
+- **`duplicates.py`** — `dhash()` y `build_duplicate_groups()`: perceptual hash casero (sin dependencia de `imagehash`) para agrupar imágenes casi-idénticas. Usado por `convert_dataset.py` (agrupar antes de dividir splits) y por `scripts/find_inconsistent_duplicates.py` (detectar labels en conflicto dentro de un grupo).
 
 ---
 
@@ -115,10 +121,14 @@ Puntos relevantes:
 ## Decisiones de diseño clave
 
 ### Data Leakage
-El split train/valid/test se hace una única vez en `convert_dataset.py`, con semilla fija (`42`), antes de cualquier entrenamiento. Ninguna imagen puede aparecer en más de un split.
+El split train/valid/test se hace una única vez en `convert_dataset.py`, con semilla fija (`42`), antes de cualquier entrenamiento, estratificado por `(clase, fuente)`. Ninguna imagen puede aparecer en más de un split.
+
+Además, antes de dividir, `convert_dataset.py` agrupa las imágenes casi-duplicadas (dHash sobre `data/raw/labeled/`, distancia de Hamming ≤ 4/64) y asigna el grupo entero a un único split — sin esto, frames de video separados por poco tiempo (o fotos casi idénticas) podían terminar uno en train y otro en test. El EDA (`notebooks/eda.ipynb`) detectó este problema antes de que se corrigiera.
 
 ### Training-Serving Skew
 Las transformaciones de test están definidas en un único lugar (`get_test_transforms()` en `src/core/preprocessing/transforms.py`) y son usadas tanto por `evaluate.py` como por `ImageClassifier` en producción, evitando divergencias entre el preprocesamiento offline y el online.
+
+El mismo principio aplica al recorte a la persona: el dataset se cura recortando al bounding box dibujado en `label_tool.py`, y en producción no hay un humano dibujando ese box — por eso `PersonDetector` (`src/core/detector.py`) lo detecta automáticamente y usa `crop_to_box()` (`src/core/preprocessing/cropping.py`) con el mismo margen que `convert_dataset.py`, para que el modelo vea el mismo tipo de recorte en ambos casos.
 
 ### Desbalance de clases
 `train.py` calcula `class weights` inversamente proporcionales a la frecuencia de cada clase directamente desde el dataset de train (sin configuración manual), penalizando más los errores sobre la clase minoritaria y crítica (`fall`).
@@ -133,4 +143,5 @@ Las transformaciones de test están definidas en un único lugar (`get_test_tran
 ## Tests — `tests/`
 
 - **`conftest.py`** — fixtures compartidos, incluyendo un cliente de test de FastAPI con una base SQLite de archivo (`test.db`) en lugar de Postgres.
-- **`test_api.py`** / **`api/test_routers.py`** — tests de integración sobre `/predict`, `/gradcam` y `/dashboard/stats`.
+- **`test_api.py`** / **`api/test_routers.py`** — tests de integración sobre `/predict`, `/gradcam` y `/dashboard/stats`, separados en casos "sin persona" (imagen dummy) y "con persona" (`tests/fixtures/person.jpg`).
+- **`core/test_cropping.py`** / **`core/test_detector.py`** — tests unitarios de `crop_to_box()` y `PersonDetector`.

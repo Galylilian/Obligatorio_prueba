@@ -36,7 +36,7 @@ GET /health
 
 ## POST /predict
 
-Clasifica una imagen como `fall` (caída) o `no_fall` (no caída).
+Clasifica una imagen como `fall` (caída) o `no_fall` (no caída). Antes de clasificar, un detector de personas (`PersonDetector`, `src/core/detector.py`) busca a la persona en la imagen y recorta alrededor suyo (con margen) — es el mismo recorte que se aplica al armar el dataset de entrenamiento (`convert_dataset.py`), para que el modelo vea siempre el mismo tipo de entrada.
 
 **Request**
 
@@ -49,21 +49,35 @@ curl -X POST http://localhost:8080/predict \
   -F "file=@imagen.jpg"
 ```
 
-**Response**
+**Response — persona detectada**
 ```json
 {
   "label": "fall",
-  "confidence": 0.9823
+  "confidence": 0.9823,
+  "person_detected": true,
+  "bbox": [0.32, 0.28, 0.71, 0.95]
+}
+```
+
+**Response — sin ninguna persona en la imagen**
+```json
+{
+  "label": null,
+  "confidence": null,
+  "person_detected": false,
+  "bbox": null
 }
 ```
 
 | Campo | Tipo | Descripción |
 |---|---|---|
-| `label` | `string` | Clase predicha: `fall` o `no_fall` |
-| `confidence` | `float` | Confianza del modelo entre 0 y 1 |
+| `label` | `string \| null` | Clase predicha: `fall` o `no_fall`. `null` si no se detectó a nadie |
+| `confidence` | `float \| null` | Confianza del modelo entre 0 y 1. `null` si no se detectó a nadie |
+| `person_detected` | `bool` | Si el detector de personas encontró a alguien en la imagen |
+| `bbox` | `[float, float, float, float] \| null` | Box detectado (`x1, y1, x2, y2` normalizados 0-1). `null` si `person_detected` es `false` |
 
 **Notas**
-- Cada llamada a este endpoint registra la predicción en la base de datos PostgreSQL con timestamp, label, confianza y tipo de modelo usado.
+- Cada llamada a este endpoint registra la predicción en la base de datos PostgreSQL con timestamp, label, confianza y tipo de modelo usado — **solo cuando se detectó una persona**. Si `person_detected` es `false` no se guarda nada.
 - Si la confianza es menor a 0.7, Streamlit muestra una advertencia de baja confianza.
 
 ---
@@ -88,17 +102,23 @@ curl -X POST http://localhost:8080/predict/batch \
     {
       "filename": "imagen1.jpg",
       "label": "fall",
-      "confidence": 0.9823
+      "confidence": 0.9823,
+      "person_detected": true,
+      "bbox": [0.32, 0.28, 0.71, 0.95]
     },
     {
       "filename": "imagen2.jpg",
       "label": "no_fall",
-      "confidence": 0.8741
+      "confidence": 0.8741,
+      "person_detected": true,
+      "bbox": [0.10, 0.15, 0.55, 0.98]
     },
     {
       "filename": "imagen3.jpg",
-      "label": "fall",
-      "confidence": 0.6512
+      "label": null,
+      "confidence": null,
+      "person_detected": false,
+      "bbox": null
     }
   ],
   "total": 3,
@@ -110,8 +130,10 @@ curl -X POST http://localhost:8080/predict/batch \
 |---|---|---|
 | `results` | `list` | Lista de predicciones por imagen |
 | `filename` | `string` | Nombre del archivo enviado |
-| `label` | `string` | Clase predicha: `fall` o `no_fall` |
-| `confidence` | `float` | Confianza del modelo entre 0 y 1 |
+| `label` | `string \| null` | Clase predicha: `fall` o `no_fall`. `null` si no se detectó a nadie en esa imagen |
+| `confidence` | `float \| null` | Confianza del modelo entre 0 y 1. `null` si no se detectó a nadie |
+| `person_detected` | `bool` | Si se detectó una persona en esa imagen |
+| `bbox` | `[float, float, float, float] \| null` | `null` si `person_detected` es `false` |
 | `total` | `int` | Cantidad de imágenes procesadas |
 | `inference_time` | `float` | Tiempo total de inferencia en segundos |
 
@@ -133,14 +155,21 @@ curl -X POST http://localhost:8080/gradcam \
   --output gradcam_result.jpg
 ```
 
-**Response**
+**Response — persona detectada**
 
-Devuelve directamente la imagen con el heatmap superpuesto en formato `image/jpeg`.
+Devuelve directamente la imagen con el heatmap superpuesto en formato `image/jpeg`. El heatmap se genera sobre el **recorte de la persona** (el mismo que ve el clasificador), no sobre la imagen completa.
+
+**Response — sin ninguna persona en la imagen**
+```json
+{
+  "error": "No se detectó ninguna persona en la imagen"
+}
+```
 
 **Notas**
 - El heatmap se genera sobre `layer4[-1]` de ResNet18, la última capa convolucional.
 - Las zonas en rojo indican las regiones con mayor peso en la decisión del modelo.
-- Se aplica el mismo preprocesamiento que en inferencia normal (`get_test_transforms()`).
+- Se aplica el mismo preprocesamiento que en inferencia normal (`get_test_transforms()`), sobre el recorte que produce `PersonDetector`.
 
 ---
 
@@ -171,6 +200,7 @@ curl -X POST http://localhost:8080/predict/video \
       "time_sec": 0.0,
       "label": "no_fall",
       "confidence": 0.9123,
+      "person_detected": true,
       "is_fall": false
     },
     {
@@ -178,7 +208,16 @@ curl -X POST http://localhost:8080/predict/video \
       "time_sec": 5.0,
       "label": "fall",
       "confidence": 0.8754,
+      "person_detected": true,
       "is_fall": true
+    },
+    {
+      "frame": 250,
+      "time_sec": 10.0,
+      "label": null,
+      "confidence": null,
+      "person_detected": false,
+      "is_fall": false
     }
   ]
 }
@@ -190,9 +229,12 @@ curl -X POST http://localhost:8080/predict/video \
 | `falls_detected` | `int` | Cantidad de frames con caída detectada |
 | `preview` | `list` | Primeros 20 resultados del análisis |
 | `time_sec` | `float` | Segundo del video correspondiente al frame |
-| `is_fall` | `bool` | `true` si el modelo clasificó como caída |
+| `person_detected` | `bool` | Si se detectó una persona en ese frame |
+| `label` | `string \| null` | Clase predicha, o `null` si no se detectó a nadie en el frame |
+| `is_fall` | `bool` | `true` solo si `person_detected` es `true` **y** `label` es `"fall"` |
 
 **Notas**
+- Cada frame pasa primero por el detector de personas (`PersonDetector`) antes de clasificar; frames sin nadie detectado quedan con `label: null` y no cuentan como caída.
 - Los frames donde se detecta una caída se guardan como imágenes en `data/video/frames/`.
 - El intervalo de análisis es de 5 segundos para evitar redundancia en videos largos.
 
